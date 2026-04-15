@@ -81,7 +81,7 @@ export function QueueCard({ item }: QueueCardProps) {
         <button
           onClick={() => act('approved')}
           disabled={isPending}
-          className="px-3 py-1 text-xs rounded border hover:bg-white/5 transition disabled:opacity-40"
+          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[88px]"
           style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
         >
           Approve
@@ -89,7 +89,7 @@ export function QueueCard({ item }: QueueCardProps) {
         <button
           onClick={() => act('rejected')}
           disabled={isPending}
-          className="px-3 py-1 text-xs rounded border hover:bg-white/5 transition disabled:opacity-40"
+          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[80px]"
           style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
         >
           Reject
@@ -97,7 +97,7 @@ export function QueueCard({ item }: QueueCardProps) {
         <button
           onClick={() => act('deferred')}
           disabled={isPending}
-          className="px-3 py-1 text-xs rounded border hover:bg-white/5 transition disabled:opacity-40"
+          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[80px]"
           style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
         >
           Defer
@@ -107,7 +107,7 @@ export function QueueCard({ item }: QueueCardProps) {
           placeholder="Feedback…"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          className="flex-1 min-w-[120px] bg-transparent border rounded px-2 py-1 text-xs"
+          className="flex-1 min-w-[140px] bg-transparent border rounded-md px-3 py-2 text-sm min-h-[44px]"
           style={{ borderColor: 'var(--border)' }}
         />
       </div>

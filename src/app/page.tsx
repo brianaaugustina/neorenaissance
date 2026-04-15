@@ -1,7 +1,9 @@
 import { loadDashboardData } from '@/lib/dashboard/load';
 import { MyView } from '@/components/MyView';
 import { AgentHQ } from '@/components/AgentHQ';
+import { OpsChiefChat } from '@/components/OpsChiefChat';
 import { RunOpsChiefButton } from '@/components/RunOpsChiefButton';
+import { DashboardShell } from '@/components/DashboardShell';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -12,7 +14,7 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen px-4 py-6 md:px-10 md:py-10 max-w-[1600px] mx-auto">
-      <header className="flex items-baseline justify-between mb-8">
+      <header className="flex items-baseline justify-between mb-6 md:mb-8">
         <div>
           <h1 className="serif text-3xl md:text-4xl gold">Artisanship</h1>
           <p className="muted text-sm mt-1">
@@ -42,16 +44,26 @@ export default async function Home() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MyView
-          todayIso={data.todayIso}
-          todaysTasks={data.todaysTasks}
-          overdueTasks={data.overdueTasks}
-          initiatives={data.initiatives}
-          chatHistory={data.chatHistory}
-        />
-        <AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} />
-      </div>
+      <DashboardShell
+        myView={
+          <MyView
+            todayIso={data.todayIso}
+            weekStartIso={data.weekStartIso}
+            weekEndIso={data.weekEndIso}
+            todaysTasks={data.todaysTasks}
+            overdueTasks={data.overdueTasks}
+            weekTasks={data.weekTasks}
+            initiatives={data.initiatives}
+          />
+        }
+        agentHQ={<AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} />}
+        chat={
+          <section className="card p-5 md:p-6">
+            <h2 className="serif text-2xl mb-4">Chat with Ops Chief</h2>
+            <OpsChiefChat initialHistory={data.chatHistory} />
+          </section>
+        }
+      />
     </main>
   );
 }

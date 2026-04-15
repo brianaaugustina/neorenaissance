@@ -92,9 +92,7 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
   };
 
   return (
-    <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border)' }}>
-      <h3 className="serif text-sm uppercase tracking-widest gold mb-3">Chat with Ops Chief</h3>
-
+    <div>
       {messages.length > 0 && (
         <div
           ref={scrollRef}
@@ -142,13 +140,13 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
           placeholder="Push the Substack draft to Thursday…"
           rows={2}
           disabled={isPending}
-          className="flex-1 bg-transparent border rounded-lg px-3 py-2 text-sm resize-none disabled:opacity-40"
+          className="flex-1 bg-transparent border rounded-lg px-3 py-3 md:py-2 text-sm resize-none disabled:opacity-40 min-h-[48px]"
           style={{ borderColor: 'var(--border)' }}
         />
         <button
           onClick={send}
           disabled={isPending || !input.trim()}
-          className="px-4 py-2 text-sm rounded-lg border transition disabled:opacity-40"
+          className="px-4 py-3 md:py-2 text-sm rounded-lg border transition disabled:opacity-40 min-h-[48px]"
           style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
         >
           {isPending ? '…' : 'Send'}

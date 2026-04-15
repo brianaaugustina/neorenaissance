@@ -2,6 +2,7 @@ import {
   getInitiatives,
   getOverdueTasks,
   getTodaysTasks,
+  getWeekTasks,
   type Initiative,
   type Task,
 } from '../notion/client';
@@ -16,13 +17,32 @@ export interface ChatMessageView {
 
 export interface DashboardData {
   todayIso: string;
+  weekStartIso: string;
+  weekEndIso: string;
   todaysTasks: Task[];
   overdueTasks: Task[];
+  weekTasks: Task[];
   initiatives: Initiative[];
   pendingQueue: any[];
   completedToday: any[];
   chatHistory: ChatMessageView[];
   errors: Record<string, string>;
+}
+
+// Monday-anchored week boundary. Weekend rolls to the following Monday.
+export function currentWeekBounds(todayIso: string): { start: string; end: string } {
+  const today = new Date(todayIso + 'T00:00:00Z');
+  const dow = today.getUTCDay(); // 0=Sun..6=Sat
+  // Shift so Monday = 0
+  const mondayOffset = (dow + 6) % 7;
+  const monday = new Date(today);
+  monday.setUTCDate(today.getUTCDate() - mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return {
+    start: monday.toISOString().slice(0, 10),
+    end: sunday.toISOString().slice(0, 10),
+  };
 }
 
 async function safe<T>(
@@ -41,26 +61,35 @@ async function safe<T>(
 
 export async function loadDashboardData(): Promise<DashboardData> {
   const todayIso = new Date().toISOString().slice(0, 10);
+  const { start: weekStartIso, end: weekEndIso } = currentWeekBounds(todayIso);
   const errors: Record<string, string> = {};
 
-  const [todaysTasks, overdueTasks, initiatives, pendingQueue, executedQueue, chatRaw] =
-    await Promise.all([
-      safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
-      safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
-      safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
-      safe('pendingQueue', () => getQueueItems('pending', 20), [] as any[], errors),
-      safe(
-        'completedQueue',
-        async () => [
-          ...(await getQueueItems('approved', 10)),
-          ...(await getQueueItems('executed', 10)),
-          ...(await getQueueItems('rejected', 10)),
-        ],
-        [] as any[],
-        errors,
-      ),
-      safe('chatHistory', () => getChatHistory(todayIso, 50), [] as any[], errors),
-    ]);
+  const [
+    todaysTasks,
+    overdueTasks,
+    weekTasks,
+    initiatives,
+    pendingQueue,
+    executedQueue,
+    chatRaw,
+  ] = await Promise.all([
+    safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
+    safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
+    safe('weekTasks', () => getWeekTasks(weekStartIso, weekEndIso), [] as Task[], errors),
+    safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
+    safe('pendingQueue', () => getQueueItems('pending', 20), [] as any[], errors),
+    safe(
+      'completedQueue',
+      async () => [
+        ...(await getQueueItems('approved', 10)),
+        ...(await getQueueItems('executed', 10)),
+        ...(await getQueueItems('rejected', 10)),
+      ],
+      [] as any[],
+      errors,
+    ),
+    safe('chatHistory', () => getChatHistory(todayIso, 50), [] as any[], errors),
+  ]);
 
   const chatHistory: ChatMessageView[] = chatRaw.map((m: any) => ({
     id: m.id,
@@ -77,8 +106,11 @@ export async function loadDashboardData(): Promise<DashboardData> {
 
   return {
     todayIso,
+    weekStartIso,
+    weekEndIso,
     todaysTasks,
     overdueTasks,
+    weekTasks,
     initiatives,
     pendingQueue,
     completedToday,

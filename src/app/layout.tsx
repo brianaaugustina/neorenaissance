@@ -17,6 +17,20 @@ const sans = Inter({
 export const metadata: Metadata = {
   title: 'Artisanship Agents',
   description: "Briana's agentic operating interface",
+  applicationName: 'Artisanship',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Artisanship',
+  },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: import('next').Viewport = {
+  themeColor: '#0c0a07',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

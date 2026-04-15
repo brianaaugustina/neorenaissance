@@ -7,6 +7,7 @@ interface TaskRowProps {
   task: Task;
   initiatives: Initiative[];
   showOverdue?: boolean;
+  showDate?: boolean;
   todayIso: string;
 }
 
@@ -16,7 +17,7 @@ function daysBetween(fromIso: string, toIso: string): number {
   );
 }
 
-export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
+export function TaskRow({ task, showOverdue, showDate, todayIso }: TaskRowProps) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -47,7 +48,7 @@ export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Failed');
         setRescheduleOpen(false);
-        setDone(true); // hide from list after reschedule
+        setDone(true);
       } catch (e: any) {
         setError(e.message);
       }
@@ -60,12 +61,12 @@ export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
     showOverdue && task.toDoDate ? daysBetween(task.toDoDate, todayIso) : 0;
 
   return (
-    <li className="group flex items-start gap-3 py-1.5 text-sm">
+    <li className="group flex items-start gap-3 py-2 md:py-1.5 text-sm">
       <button
         onClick={markDone}
         disabled={isPending}
         aria-label="Mark done"
-        className="mt-0.5 w-4 h-4 rounded border hover:bg-white/5 transition disabled:opacity-40 cursor-pointer"
+        className="mt-0.5 w-6 h-6 md:w-4 md:h-4 rounded border hover:bg-white/5 transition disabled:opacity-40 cursor-pointer flex-shrink-0"
         style={{ borderColor: 'var(--gold-dim)' }}
       />
       <div className="flex-1 min-w-0">
@@ -73,6 +74,9 @@ export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
           <span className="truncate">{task.title}</span>
           {task.type && (
             <span className="muted text-[10px] uppercase tracking-wider">{task.type}</span>
+          )}
+          {showDate && task.toDoDate && (
+            <span className="muted text-[10px]">{task.toDoDate}</span>
           )}
           {overdueDays > 0 && (
             <span className="text-[10px]" style={{ color: 'var(--danger)' }}>
@@ -86,19 +90,19 @@ export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
               type="date"
               value={newDate}
               onChange={(e) => setNewDate(e.target.value)}
-              className="bg-transparent border rounded px-2 py-1 text-xs"
+              className="bg-transparent border rounded px-2 py-2 md:py-1 text-xs min-h-[36px]"
               style={{ borderColor: 'var(--border)' }}
             />
             <button
               onClick={reschedule}
               disabled={isPending}
-              className="text-xs gold hover:underline"
+              className="text-xs gold hover:underline px-2 py-2 md:py-1 min-h-[36px]"
             >
               Save
             </button>
             <button
               onClick={() => setRescheduleOpen(false)}
-              className="text-xs muted hover:underline"
+              className="text-xs muted hover:underline px-2 py-2 md:py-1 min-h-[36px]"
             >
               Cancel
             </button>
@@ -110,7 +114,8 @@ export function TaskRow({ task, showOverdue, todayIso }: TaskRowProps) {
         <button
           onClick={() => setRescheduleOpen(true)}
           disabled={isPending}
-          className="opacity-0 group-hover:opacity-100 text-xs muted hover:text-gold transition"
+          aria-label="Reschedule"
+          className="md:opacity-0 md:group-hover:opacity-100 text-sm md:text-xs muted hover:text-gold transition w-8 h-8 md:w-auto md:h-auto flex items-center justify-center flex-shrink-0"
           title="Reschedule"
         >
           ↗
