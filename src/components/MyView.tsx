@@ -1,11 +1,14 @@
 import type { Initiative, Task } from '@/lib/notion/client';
+import type { ChatMessageView } from '@/lib/dashboard/load';
 import { TaskRow } from './TaskRow';
+import { OpsChiefChat } from './OpsChiefChat';
 
 interface MyViewProps {
   todayIso: string;
   todaysTasks: Task[];
   overdueTasks: Task[];
   initiatives: Initiative[];
+  chatHistory: ChatMessageView[];
 }
 
 function groupByVenture(
@@ -28,7 +31,7 @@ function groupByVenture(
   );
 }
 
-export function MyView({ todayIso, todaysTasks, overdueTasks, initiatives }: MyViewProps) {
+export function MyView({ todayIso, todaysTasks, overdueTasks, initiatives, chatHistory }: MyViewProps) {
   const groups = groupByVenture(todaysTasks, initiatives);
 
   return (
@@ -70,6 +73,8 @@ export function MyView({ todayIso, todaysTasks, overdueTasks, initiatives }: MyV
           ))}
         </div>
       )}
+
+      <OpsChiefChat initialHistory={chatHistory} />
     </section>
   );
 }

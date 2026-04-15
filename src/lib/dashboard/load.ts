@@ -5,7 +5,14 @@ import {
   type Initiative,
   type Task,
 } from '../notion/client';
-import { getQueueItems } from '../supabase/client';
+import { getChatHistory, getQueueItems } from '../supabase/client';
+
+export interface ChatMessageView {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
 
 export interface DashboardData {
   todayIso: string;
@@ -14,6 +21,7 @@ export interface DashboardData {
   initiatives: Initiative[];
   pendingQueue: any[];
   completedToday: any[];
+  chatHistory: ChatMessageView[];
   errors: Record<string, string>;
 }
 
@@ -35,7 +43,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const errors: Record<string, string> = {};
 
-  const [todaysTasks, overdueTasks, initiatives, pendingQueue, executedQueue] =
+  const [todaysTasks, overdueTasks, initiatives, pendingQueue, executedQueue, chatRaw] =
     await Promise.all([
       safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
       safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
@@ -51,7 +59,15 @@ export async function loadDashboardData(): Promise<DashboardData> {
         [] as any[],
         errors,
       ),
+      safe('chatHistory', () => getChatHistory(todayIso, 50), [] as any[], errors),
     ]);
+
+  const chatHistory: ChatMessageView[] = chatRaw.map((m: any) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    created_at: m.created_at,
+  }));
 
   // Filter "completed today" by reviewed_at date
   const completedToday = executedQueue.filter((item: any) => {
@@ -66,6 +82,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     initiatives,
     pendingQueue,
     completedToday,
+    chatHistory,
     errors,
   };
 }

@@ -381,6 +381,23 @@ export async function getMonthlyPriorities(monthIso?: string): Promise<Task[]> {
   return merged;
 }
 
+// Title substring search across open tasks. Used by the chat agent to
+// resolve natural-language references like "the Substack draft".
+export async function searchOpenTasks(query: string, limit = 10): Promise<Task[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const res: any = await queryDs(env.notion.tasksDbId, {
+    filter: {
+      and: [
+        { property: 'Task', title: { contains: trimmed } },
+        ...OPEN_STATUS_FILTER.and,
+      ],
+    },
+    page_size: limit,
+  });
+  return res.results.map(mapTask);
+}
+
 // ---------------------------------------------------------------------------
 // Writes — Task creation / update in the To-Do database.
 // ---------------------------------------------------------------------------

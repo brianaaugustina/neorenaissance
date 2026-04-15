@@ -48,6 +48,7 @@ export default async function Home() {
           todaysTasks={data.todaysTasks}
           overdueTasks={data.overdueTasks}
           initiatives={data.initiatives}
+          chatHistory={data.chatHistory}
         />
         <AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} />
       </div>
