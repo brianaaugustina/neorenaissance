@@ -26,6 +26,27 @@ const PRICE_OUT_PER_MTOK = 15;
 
 const AGENT_NAME = 'ops_chief';
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function buildDateTable(todayIso: string): string {
+  const today = new Date(todayIso + 'T12:00:00Z');
+  const lines: string[] = [];
+  for (let offset = -1; offset <= 13; offset++) {
+    const d = new Date(today);
+    d.setUTCDate(today.getUTCDate() + offset);
+    const iso = d.toISOString().slice(0, 10);
+    const dayName = DAY_NAMES[d.getUTCDay()];
+    const label =
+      offset === -1 ? ' (yesterday)' :
+      offset === 0 ? ' (today)' :
+      offset === 1 ? ' (tomorrow)' :
+      offset <= 6 ? ' (this week)' :
+      ' (next week)';
+    lines.push(`${dayName} = ${iso}${label}`);
+  }
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Tools — names and schemas Claude sees
 // ---------------------------------------------------------------------------
@@ -305,6 +326,9 @@ usually right.
 
 Today is ${todayIso}.
 
+# Date reference — DO NOT calculate dates yourself. Use this table.
+${buildDateTable(todayIso)}
+
 Available initiatives (use these exact names when calling create_task or
 capture_idea):
 ${available}
@@ -319,8 +343,9 @@ ${overdueBlock}
 
 Rules:
 
-- Interpret relative dates (today, tomorrow, Thursday, next week) into
-  YYYY-MM-DD yourself before calling tools.
+- When the user says a day name ("Saturday", "next Monday"), look it up
+  in the date reference table above. NEVER calculate dates yourself —
+  always use the table.
 - If the user asks what's on her plate, what's overdue, or similar questions
   about today's work, answer directly from the context above — do NOT call
   \`search_tasks\` for that.
