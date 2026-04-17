@@ -319,6 +319,10 @@ function summarizeTask(t: Task, initiatives: Initiative[]): Record<string, unkno
     type: t.type,
     status: t.status,
     to_do_date: t.toDoDate,
+    dates_start: t.datesStart,
+    dates_end: t.datesEnd,
+    project_ids: t.projectIds.length ? t.projectIds : undefined,
+    subtask_ids: t.subtaskIds.length ? t.subtaskIds : undefined,
     venture: ventureNames.join(', ') || null,
   };
 }
@@ -444,13 +448,19 @@ function renderTaskForContext(t: Task, initiatives: Initiative[]): string {
       .map((id) => initiatives.find((i) => i.id === id)?.name)
       .filter(Boolean)
       .join(', ') || 'Unassigned';
+  const deadline = t.datesStart && t.datesEnd && t.datesStart !== t.datesEnd
+    ? `${t.datesStart}→${t.datesEnd}`
+    : t.datesEnd ?? t.datesStart;
   const bits = [
     `id=${t.id}`,
     `"${t.title}"`,
     t.type ? `[${t.type}]` : null,
     `venture=${venture}`,
     t.toDoDate ? `todo=${t.toDoDate}` : null,
+    deadline ? `deadline=${deadline}` : null,
     t.status ? `status=${t.status}` : null,
+    t.projectIds.length ? `parent_projects=${t.projectIds.length}` : null,
+    t.subtaskIds.length ? `subtasks=${t.subtaskIds.length}` : null,
   ].filter(Boolean);
   return '- ' + bits.join('  ');
 }
