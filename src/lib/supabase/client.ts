@@ -135,6 +135,21 @@ export async function logRunComplete(p: RunCompleteParams) {
 }
 
 // ============================================================
+// Agent runs — recent activity for dashboard
+// ============================================================
+export async function getRecentAgentRuns(limit = 20) {
+  const { data, error } = await supabaseAdmin()
+    .from('agent_runs')
+    .select(
+      'id, agent_name, trigger, started_at, completed_at, status, duration_ms, output_summary, cost_estimate',
+    )
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ============================================================
 // Chat messages (Ops Chief)
 // ============================================================
 export async function getChatHistory(sessionDate?: string, limit = 50) {

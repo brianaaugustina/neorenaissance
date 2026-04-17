@@ -2,15 +2,23 @@ import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../env';
 import {
   createTask,
+  deleteTask,
   getInitiatives,
   getOverdueTasks,
   getTodaysTasks,
+  searchCompanies,
+  searchContacts,
+  searchContent,
+  searchNotes,
   searchOpenTasks,
+  searchOutreach,
   updateTask,
   type Initiative,
+  type NotionRecord,
   type Task,
 } from '../notion/client';
 import {
+  getAgentMemory,
   getChatHistory,
   logRunComplete,
   logRunStart,
@@ -161,6 +169,119 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['title'],
     },
   },
+  {
+    name: 'update_task_dates',
+    description:
+      'Set or clear the Dates (deadline) field on a task. For single-date deadlines, set start only. For date ranges, set both start and end.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string' },
+        dates_start: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD. Omit to clear the Dates field.',
+        },
+        dates_end: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD. Defaults to dates_start if omitted.',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'update_task_relations',
+    description:
+      'Set the Project (parent) or Tasks (subtasks) relations on a task. Pass arrays of Notion page IDs. Use search_tasks first to find the IDs.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string' },
+        project_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Parent project page IDs. Replaces existing relations.',
+        },
+        task_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Subtask page IDs. Replaces existing relations.',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'delete_task',
+    description:
+      'Archive (soft-delete) a task from Notion. IMPORTANT: Before calling this tool, you MUST ask the user for explicit confirmation in chat — e.g. "Are you sure you want to delete \'[task title]\'?" — and wait for their yes/confirm in the next message. Never call this without prior confirmation.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string' },
+        task_title: {
+          type: 'string',
+          description: 'Title of the task being deleted, for logging.',
+        },
+      },
+      required: ['task_id', 'task_title'],
+    },
+  },
+  {
+    name: 'search_notes',
+    description: 'Search the Notes database by title. Read-only context lookup.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Substring to match against note titles.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_content',
+    description: 'Search the Content database by title. Read-only context lookup.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Substring to match against content titles.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_companies',
+    description: 'Search the Companies database by title. Read-only context lookup for relational management.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Substring to match against company names.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_contacts',
+    description: 'Search the Contacts database by title. Read-only context lookup for relational management.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Substring to match against contact names.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_outreach',
+    description: 'Search the Outreach database by title. Read-only context lookup for relational management.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Substring to match against outreach entries.' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -263,6 +384,43 @@ async function handleTool(
       });
       return { ok: true, task_id: id };
     }
+    case 'update_task_dates': {
+      const datesStart = (input.dates_start as string) || undefined;
+      const datesEnd = (input.dates_end as string) || undefined;
+      await updateTask(String(input.task_id), { datesStart, datesEnd });
+      return { ok: true };
+    }
+    case 'update_task_relations': {
+      await updateTask(String(input.task_id), {
+        projectIds: input.project_ids as string[] | undefined,
+        taskIds: input.task_ids as string[] | undefined,
+      });
+      return { ok: true };
+    }
+    case 'delete_task': {
+      await deleteTask(String(input.task_id));
+      return { ok: true, archived: true, title: input.task_title };
+    }
+    case 'search_notes': {
+      const results = await searchNotes(String(input.query ?? ''));
+      return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
+    }
+    case 'search_content': {
+      const results = await searchContent(String(input.query ?? ''));
+      return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
+    }
+    case 'search_companies': {
+      const results = await searchCompanies(String(input.query ?? ''));
+      return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
+    }
+    case 'search_contacts': {
+      const results = await searchContacts(String(input.query ?? ''));
+      return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
+    }
+    case 'search_outreach': {
+      const results = await searchOutreach(String(input.query ?? ''));
+      return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
+    }
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -361,6 +519,13 @@ Rules:
   Thursday.") Don't re-describe the task back in full.
 - Never call a destructive tool (update_task_status to Done, reschedule_task)
   without being reasonably certain you have the right task.
+- For delete_task: NEVER call delete_task without first asking the user
+  "Are you sure you want to delete '{task title}'?" and waiting for their
+  explicit "yes" or "confirm" in the next message. Two-step flow: search
+  for the task, ask for confirmation, then delete only after they confirm.
+- You have read-only access to Notes, Content, Companies, Contacts, and
+  Outreach databases via search tools. Use these when the user asks about
+  notes, content, contacts, companies, or outreach.
 `;
 }
 
@@ -389,7 +554,24 @@ export async function runOpsChiefChat(userMessage: string): Promise<ChatResult> 
 
     await saveChatMessage({ role: 'user', content: userMessage });
 
-    const systemPrompt = buildChatSystemPrompt(toolCtx, todayIso);
+    // Load persistent memory (feedback rules + chat summary)
+    const memory = await getAgentMemory(AGENT_NAME);
+    let memoryBlock = '';
+    if (Object.keys(memory).length) {
+      const parts: string[] = [];
+      if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
+        parts.push(
+          '# Persistent Rules (from past feedback)\nFollow these rules — they are direct instructions from Briana.\n' +
+            memory.feedback_rules.map((r: string) => `- ${r}`).join('\n'),
+        );
+      }
+      if (memory.chat_summary) {
+        parts.push(`# Yesterday's Chat Summary\n${memory.chat_summary}`);
+      }
+      if (parts.length) memoryBlock = '\n\n---\n\n' + parts.join('\n\n');
+    }
+
+    const systemPrompt = buildChatSystemPrompt(toolCtx, todayIso) + memoryBlock;
     const actions: ChatAction[] = [];
     let tokensIn = 0;
     let tokensOut = 0;

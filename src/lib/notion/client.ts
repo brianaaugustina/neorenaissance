@@ -405,8 +405,12 @@ export interface CreateTaskParams {
   title: string;
   type?: string;
   toDoDate?: string;
+  datesStart?: string;
+  datesEnd?: string;
   initiativeId?: string;
   outcomeId?: string;
+  projectIds?: string[];
+  taskIds?: string[];
   monthlyPriority?: boolean;
   source?: string;
   status?: string;
@@ -424,6 +428,17 @@ export async function createTask(params: CreateTaskParams): Promise<string> {
   if (params.outcomeId) properties.Outcome = { relation: [{ id: params.outcomeId }] };
   if (params.monthlyPriority != null) properties['Monthly Priority'] = { checkbox: params.monthlyPriority };
   if (params.source) properties.Source = { select: { name: params.source } };
+  if (params.datesStart) {
+    properties['Dates'] = {
+      date: { start: params.datesStart, end: params.datesEnd ?? null },
+    };
+  }
+  if (params.projectIds?.length) {
+    properties['Project'] = { relation: params.projectIds.map((id) => ({ id })) };
+  }
+  if (params.taskIds?.length) {
+    properties['Tasks'] = { relation: params.taskIds.map((id) => ({ id })) };
+  }
 
   const res: any = await notion.pages.create({
     parent: { type: 'data_source_id', data_source_id: dsId } as any,
@@ -442,6 +457,86 @@ export async function updateTask(id: string, params: Partial<CreateTaskParams>):
   if (params.outcomeId) properties.Outcome = { relation: [{ id: params.outcomeId }] };
   if (params.monthlyPriority != null) properties['Monthly Priority'] = { checkbox: params.monthlyPriority };
   if (params.source) properties.Source = { select: { name: params.source } };
+  if (params.datesStart !== undefined) {
+    properties['Dates'] = params.datesStart
+      ? { date: { start: params.datesStart, end: params.datesEnd ?? null } }
+      : { date: null };
+  }
+  if (params.projectIds !== undefined) {
+    properties['Project'] = { relation: (params.projectIds ?? []).map((id) => ({ id })) };
+  }
+  if (params.taskIds !== undefined) {
+    properties['Tasks'] = { relation: (params.taskIds ?? []).map((id) => ({ id })) };
+  }
 
   await notion.pages.update({ page_id: id, properties: properties as any });
+}
+
+// ---------------------------------------------------------------------------
+// Delete (archive) a task
+// ---------------------------------------------------------------------------
+export async function deleteTask(id: string): Promise<void> {
+  await notion.pages.update({ page_id: id, archived: true });
+}
+
+// ---------------------------------------------------------------------------
+// Read-only search functions for Notes, Content, and Relational Management DBs
+// ---------------------------------------------------------------------------
+export interface NotionRecord {
+  id: string;
+  title: string;
+  status: string | null;
+  raw: any;
+}
+
+function mapGenericRecord(page: any): NotionRecord {
+  return {
+    id: page.id,
+    title: getTitle(page),
+    status: getSelect(page, 'Status'),
+    raw: page,
+  };
+}
+
+async function searchDb(
+  dbId: string | undefined,
+  dbName: string,
+  query: string,
+  limit: number,
+): Promise<NotionRecord[]> {
+  if (!dbId) {
+    console.warn(`${dbName} DB ID not configured — skipping search`);
+    return [];
+  }
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  // Use Notion's full-text search filter; the title property name varies per DB,
+  // so we rely on the database's built-in search via the query parameter.
+  const dsId = await resolveDataSourceId(dbId);
+  const res: any = await (notion.dataSources as any).query({
+    data_source_id: dsId,
+    filter: { and: [{ property: 'title', rich_text: { contains: trimmed } }] },
+    page_size: limit,
+  });
+  return res.results.map(mapGenericRecord);
+}
+
+export async function searchNotes(query: string, limit = 10): Promise<NotionRecord[]> {
+  return searchDb(env.notion.notesDbId, 'Notes', query, limit);
+}
+
+export async function searchContent(query: string, limit = 10): Promise<NotionRecord[]> {
+  return searchDb(env.notion.contentDbId, 'Content', query, limit);
+}
+
+export async function searchCompanies(query: string, limit = 10): Promise<NotionRecord[]> {
+  return searchDb(env.notion.companiesDbId, 'Companies', query, limit);
+}
+
+export async function searchContacts(query: string, limit = 10): Promise<NotionRecord[]> {
+  return searchDb(env.notion.contactsDbId, 'Contacts', query, limit);
+}
+
+export async function searchOutreach(query: string, limit = 10): Promise<NotionRecord[]> {
+  return searchDb(env.notion.outreachDbId, 'Outreach', query, limit);
 }

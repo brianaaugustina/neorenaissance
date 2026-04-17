@@ -6,7 +6,7 @@ import {
   type Initiative,
   type Task,
 } from '../notion/client';
-import { getChatHistory, getQueueItems } from '../supabase/client';
+import { getChatHistory, getQueueItems, getRecentAgentRuns } from '../supabase/client';
 
 export interface ChatMessageView {
   id: string;
@@ -26,6 +26,7 @@ export interface DashboardData {
   pendingQueue: any[];
   completedToday: any[];
   chatHistory: ChatMessageView[];
+  agentRuns: any[];
   errors: Record<string, string>;
 }
 
@@ -72,6 +73,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     pendingQueue,
     executedQueue,
     chatRaw,
+    agentRuns,
   ] = await Promise.all([
     safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
     safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
@@ -89,6 +91,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
       errors,
     ),
     safe('chatHistory', () => getChatHistory(todayIso, 50), [] as any[], errors),
+    safe('agentRuns', () => getRecentAgentRuns(20), [] as any[], errors),
   ]);
 
   const chatHistory: ChatMessageView[] = chatRaw.map((m: any) => ({
@@ -115,6 +118,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     pendingQueue,
     completedToday,
     chatHistory,
+    agentRuns,
     errors,
   };
 }

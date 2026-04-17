@@ -11,7 +11,8 @@ import {
   type Outcome,
   type Task,
 } from '../notion/client';
-import { loadContextFile, runAgent, type RunAgentResult } from './base';
+import { getAgentMemory, getChatHistory, setAgentMemory } from '../supabase/client';
+import { loadContextFile, runAgent, think, type RunAgentResult } from './base';
 
 const AGENT_NAME = 'ops_chief';
 const URGENT_WINDOW_DAYS = 3;
@@ -232,6 +233,30 @@ Now produce Briana's daily briefing following the format and prioritization
 rules in your system prompt. Lead with priority. Be brief and direct.`;
 }
 
+// ---------------------------------------------------------------------------
+// Chat summary — distill yesterday's chat into a persistent memory entry.
+// Called at the end of the daily briefing so it piggybacks on the existing cron.
+// ---------------------------------------------------------------------------
+async function summarizeYesterdaysChat(): Promise<void> {
+  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const history = await getChatHistory(yesterday, 100);
+
+  if (history.length < 2) return; // Nothing meaningful to summarize
+
+  const transcript = history
+    .map((m: any) => `[${m.role}] ${m.content}`)
+    .join('\n\n');
+
+  const result = await think({
+    systemPrompt:
+      'You are a concise summarizer. Extract key decisions, stated preferences, action items, and behavioral rules from this chat transcript between an AI agent (Ops Chief) and its user (Briana). Output a bullet list. Be specific and actionable. 5-10 bullets max. Omit small talk.',
+    userPrompt: transcript,
+    maxTokens: 500,
+  });
+
+  await setAgentMemory(AGENT_NAME, 'chat_summary', result.text);
+}
+
 export async function runOpsChiefDailyBriefing(
   trigger: 'cron' | 'manual' | 'chat' = 'manual',
 ): Promise<DailyBriefingResult> {
@@ -283,15 +308,33 @@ export async function runOpsChiefDailyBriefing(
     },
     summarizeContext: (ctx) =>
       `today=${ctx.todayIso} urgent=${ctx.urgentProjects.length} urgent_subs=${ctx.urgentSubtasks.length} overdue=${ctx.overdueTasks.length} today_tasks=${ctx.todaysTasks.length} outcomes=${ctx.activeOutcomes.length} errors=${Object.keys(ctx.errors).length}`,
-    buildPrompt: (ctx) => ({
-      system:
-        loadContextFile('system.md') +
-        '\n\n---\n\n' +
-        loadContextFile('operations/venture-days.md') +
-        '\n\n---\n\n' +
-        loadContextFile('agents/ops-chief.md'),
-      user: buildUserPrompt(ctx),
-    }),
+    buildPrompt: async (ctx) => {
+      const memory = await getAgentMemory(AGENT_NAME);
+      let memoryBlock = '';
+      if (Object.keys(memory).length) {
+        const parts: string[] = [];
+        if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
+          parts.push(
+            '# Persistent Rules (from past feedback)\nFollow these rules — they are direct instructions from Briana based on prior briefings.\n' +
+              memory.feedback_rules.map((r: string) => `- ${r}`).join('\n'),
+          );
+        }
+        if (memory.chat_summary) {
+          parts.push(`# Yesterday's Chat Summary\n${memory.chat_summary}`);
+        }
+        if (parts.length) memoryBlock = '\n\n---\n\n' + parts.join('\n\n');
+      }
+      return {
+        system:
+          loadContextFile('system.md') +
+          '\n\n---\n\n' +
+          loadContextFile('operations/venture-days.md') +
+          '\n\n---\n\n' +
+          loadContextFile('agents/ops-chief.md') +
+          memoryBlock,
+        user: buildUserPrompt(ctx),
+      };
+    },
     buildDeposit: (ctx, r) => ({
       type: 'briefing',
       title: `Daily Briefing — ${ctx.dayLabel}`,
@@ -314,6 +357,13 @@ export async function runOpsChiefDailyBriefing(
       },
     }),
   });
+
+  // Piggyback: summarize yesterday's chat into memory for future context
+  try {
+    await summarizeYesterdaysChat();
+  } catch (e) {
+    console.error('Chat summary failed (non-fatal):', e);
+  }
 
   return { ...result, briefing: result.result.text };
 }

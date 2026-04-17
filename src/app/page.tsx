@@ -56,7 +56,7 @@ export default async function Home() {
             initiatives={data.initiatives}
           />
         }
-        agentHQ={<AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} />}
+        agentHQ={<AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} agentRuns={data.agentRuns} />}
         chat={
           <section className="card p-5 md:p-6">
             <h2 className="serif text-2xl mb-4">Chat with Ops Chief</h2>

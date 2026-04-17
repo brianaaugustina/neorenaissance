@@ -1,14 +1,16 @@
+import { AgentUpdates } from './AgentUpdates';
 import { QueueCard } from './QueueCard';
 
 interface AgentHQProps {
   pending: any[];
   completedToday: any[];
+  agentRuns: any[];
 }
 
-export function AgentHQ({ pending, completedToday }: AgentHQProps) {
+export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
   return (
-    <section className="card p-6">
-      <div className="flex items-baseline justify-between mb-4">
+    <section className="card p-6 space-y-8">
+      <div className="flex items-baseline justify-between">
         <h2 className="serif text-2xl">Agent HQ</h2>
         <div className="text-xs muted flex gap-4">
           <span>
@@ -20,31 +22,51 @@ export function AgentHQ({ pending, completedToday }: AgentHQProps) {
         </div>
       </div>
 
-      {pending.length === 0 ? (
-        <p className="muted text-sm mb-6">Nothing awaiting review.</p>
-      ) : (
-        <div className="space-y-4 mb-6">
-          {pending.map((item) => (
-            <QueueCard key={item.id} item={item} />
-          ))}
-        </div>
-      )}
+      {/* ---- Agent Updates ---- */}
+      <div>
+        <h3 className="serif text-sm uppercase tracking-widest muted mb-3">
+          Agent Updates
+        </h3>
+        <AgentUpdates runs={agentRuns} />
+      </div>
 
-      {completedToday.length > 0 && (
-        <div>
-          <h3 className="serif text-sm uppercase tracking-widest muted mb-3">Completed today</h3>
-          <ul className="space-y-2 text-sm">
-            {completedToday.map((item) => (
-              <li key={item.id} className="flex items-start gap-2">
-                <span style={{ color: 'var(--ok)' }}>✓</span>
-                <span className="flex-1">
-                  <span className="gold">{item.agent_name}</span> · {item.title}
-                </span>
-              </li>
+      {/* ---- Divider ---- */}
+      <hr style={{ borderColor: 'var(--border)' }} />
+
+      {/* ---- Agent Queue ---- */}
+      <div>
+        <h3 className="serif text-sm uppercase tracking-widest muted mb-3">
+          Agent Queue
+        </h3>
+
+        {pending.length === 0 ? (
+          <p className="muted text-sm mb-4">Nothing awaiting review.</p>
+        ) : (
+          <div className="space-y-4 mb-4">
+            {pending.map((item) => (
+              <QueueCard key={item.id} item={item} />
             ))}
-          </ul>
-        </div>
-      )}
+          </div>
+        )}
+
+        {completedToday.length > 0 && (
+          <div>
+            <h4 className="serif text-xs uppercase tracking-widest muted mb-2">
+              Completed today
+            </h4>
+            <ul className="space-y-2 text-sm">
+              {completedToday.map((item) => (
+                <li key={item.id} className="flex items-start gap-2">
+                  <span style={{ color: 'var(--ok)' }}>✓</span>
+                  <span className="flex-1">
+                    <span className="gold">{item.agent_name}</span> · {item.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

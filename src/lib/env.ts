@@ -21,6 +21,9 @@ export const env = {
     outcomesDbId: required('NOTION_OUTCOMES_DB_ID'),
     notesDbId: process.env.NOTION_NOTES_DB_ID,
     contentDbId: process.env.NOTION_CONTENT_DB_ID,
+    companiesDbId: process.env.NOTION_COMPANIES_DB_ID,
+    contactsDbId: process.env.NOTION_CONTACTS_DB_ID,
+    outreachDbId: process.env.NOTION_OUTREACH_DB,
   },
   supabase: {
     url: required('NEXT_PUBLIC_SUPABASE_URL'),
