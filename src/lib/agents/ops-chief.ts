@@ -16,7 +16,9 @@ import {
   getChatHistory,
   getQueueItems,
   getRecentAgentRuns,
+  getRecentFeedback,
   setAgentMemory,
+  type RecentFeedbackItem,
 } from '../supabase/client';
 import { loadContextFile, runAgent, think, type RunAgentResult } from './base';
 
@@ -46,6 +48,7 @@ export interface OpsChiefDailyContext {
   initiatives: Initiative[];
   recentAgentRuns: any[];
   pendingQueueItems: any[];
+  recentFeedback: RecentFeedbackItem[];
   errors: Record<string, string>;
 }
 
@@ -154,6 +157,59 @@ function renderUrgentProject(
   return `${base}  ${label}`;
 }
 
+// Renders persistent agent_memory for inclusion in any OC system prompt.
+// Exported so chat and weekly planner can reuse the same rendering logic.
+export function renderMemoryBlock(memory: Record<string, any>): string {
+  if (!memory || !Object.keys(memory).length) return '';
+  const parts: string[] = [];
+
+  if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
+    parts.push(
+      '# Persistent Rules (from past feedback)\nFollow these rules — they are direct instructions from Briana based on prior sessions.\n' +
+        memory.feedback_rules.map((r: string) => `- ${r}`).join('\n'),
+    );
+  }
+
+  const distill = memory.chat_distill as ChatDistill | undefined;
+  if (distill && typeof distill === 'object') {
+    const distillSections: string[] = [];
+    if (distill.remember?.length) {
+      distillSections.push(
+        '## Things to remember (explicit)\n' +
+          distill.remember.map((r) => `- ${r}`).join('\n'),
+      );
+    }
+    if (distill.venture_updates?.length) {
+      distillSections.push(
+        '## Venture updates\n' +
+          distill.venture_updates.map((r) => `- ${r}`).join('\n'),
+      );
+    }
+    if (distill.raw_summary) {
+      distillSections.push(`## Yesterday in one paragraph\n${distill.raw_summary}`);
+    }
+    if (distillSections.length) {
+      parts.push(`# From yesterday's chat\n${distillSections.join('\n\n')}`);
+    }
+  } else if (memory.chat_summary) {
+    // Backward-compat for memory written before structured distillation existed.
+    parts.push(`# Yesterday's Chat Summary\n${memory.chat_summary}`);
+  }
+
+  return parts.length ? '\n\n---\n\n' + parts.join('\n\n') : '';
+}
+
+function renderRecentFeedback(items: RecentFeedbackItem[]): string {
+  if (!items.length) return '';
+  const lines = items.map((f) => {
+    const statusLabel = f.status.toUpperCase();
+    const date = (f.reviewed_at ?? f.created_at).slice(0, 10);
+    const feedbackText = f.feedback ? ` — "${f.feedback}"` : '';
+    return `- [${statusLabel} ${date}] ${f.type}: "${f.title}"${feedbackText}`;
+  });
+  return lines.join('\n');
+}
+
 function renderAgentActivity(ctx: OpsChiefDailyContext): string {
   const lines: string[] = [];
   for (const run of ctx.recentAgentRuns) {
@@ -220,6 +276,13 @@ export function buildUserPrompt(ctx: OpsChiefDailyContext): string {
         .join('\n')
     : '(none)';
 
+  const recentFeedbackRendered = renderRecentFeedback(ctx.recentFeedback);
+  const feedbackBlock = recentFeedbackRendered
+    ? `\n\n# RECENT FEEDBACK (last 24 hours)
+Briana's corrections and rejections on past outputs. Do NOT repeat the same choices she just corrected.
+${recentFeedbackRendered}`
+    : '';
+
   const errorBlock = Object.keys(ctx.errors).length
     ? '\n\n**Data fetch errors (mention briefly if relevant):**\n' +
       Object.entries(ctx.errors)
@@ -251,7 +314,7 @@ ${outcomesRef}
 ${initiatives.map((i) => `- ${i.name} [${i.status ?? 'no status'}]`).join('\n') || '(none)'}
 
 # AGENT ACTIVITY (last 24 hours)
-${renderAgentActivity(ctx)}
+${renderAgentActivity(ctx)}${feedbackBlock}
 ${errorBlock}
 
 Now produce Briana's daily briefing following the format and prioritization
@@ -259,27 +322,98 @@ rules in your system prompt. Lead with priority. Be brief and direct.`;
 }
 
 // ---------------------------------------------------------------------------
-// Chat summary — distill yesterday's chat into a persistent memory entry.
-// Called at the end of the daily briefing so it piggybacks on the existing cron.
+// Chat distillation — structured extraction from yesterday's chat into four
+// typed categories. Preferences and behavior corrections are promoted into
+// the long-term `feedback_rules` so they influence every future run.
 // ---------------------------------------------------------------------------
+export interface ChatDistill {
+  remember: string[];           // Explicit "remember that X" commands
+  preferences: string[];        // Inferred stated preferences
+  venture_updates: string[];    // Venture/initiative context updates
+  behavior_corrections: string[]; // Corrections to OC's behavior
+  raw_summary: string;          // Short narrative summary for the briefing
+}
+
+function parseDistill(text: string): ChatDistill {
+  // Claude is instructed to return a JSON object. Defensive parse — fall back
+  // to empty categories with raw_summary = full text if JSON parsing fails.
+  try {
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1) throw new Error('no json');
+    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+    const arr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()) : [];
+    return {
+      remember: arr(parsed.remember),
+      preferences: arr(parsed.preferences),
+      venture_updates: arr(parsed.venture_updates),
+      behavior_corrections: arr(parsed.behavior_corrections),
+      raw_summary: typeof parsed.raw_summary === 'string' ? parsed.raw_summary : '',
+    };
+  } catch {
+    return {
+      remember: [],
+      preferences: [],
+      venture_updates: [],
+      behavior_corrections: [],
+      raw_summary: text.trim(),
+    };
+  }
+}
+
 async function summarizeYesterdaysChat(): Promise<void> {
   const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   const history = await getChatHistory(yesterday, 100);
 
-  if (history.length < 2) return; // Nothing meaningful to summarize
+  if (history.length < 2) return; // Nothing meaningful to distill
 
   const transcript = history
     .map((m: any) => `[${m.role}] ${m.content}`)
     .join('\n\n');
 
   const result = await think({
-    systemPrompt:
-      'You are a concise summarizer. Extract key decisions, stated preferences, action items, and behavioral rules from this chat transcript between an AI agent (Ops Chief) and its user (Briana). Output a bullet list. Be specific and actionable. 5-10 bullets max. Omit small talk.',
+    systemPrompt: `You distill yesterday's chat between Ops Chief and Briana into four typed categories plus a short narrative summary. Return ONLY a JSON object with these keys:
+
+{
+  "remember": string[]          // Things Briana said "remember that", "save this", or explicitly asked to retain. Include exact statements.
+  "preferences": string[]       // Stated preferences about how she works, wants the dashboard, wants tasks scheduled — things that should shape future briefings. Infer even when she didn't say "remember".
+  "venture_updates": string[]   // Updates to venture/initiative context — pivots, new collaborators, changes in scope, status shifts that Ops Chief should know.
+  "behavior_corrections": string[] // Corrections to Ops Chief's behavior — things Briana told OC to stop or start doing.
+  "raw_summary": string         // 2-3 sentence narrative of yesterday's key decisions and action items. No small talk.
+}
+
+Be specific and actionable. Omit pleasantries. If a category is empty, return an empty array. Return ONLY the JSON — no preamble, no code fence.`,
     userPrompt: transcript,
-    maxTokens: 500,
+    maxTokens: 900,
   });
 
-  await setAgentMemory(AGENT_NAME, 'chat_summary', result.text);
+  const distill = parseDistill(result.text);
+  await setAgentMemory(AGENT_NAME, 'chat_distill', distill);
+  // Keep chat_summary for backward compatibility with prompts that read it.
+  await setAgentMemory(
+    AGENT_NAME,
+    'chat_summary',
+    distill.raw_summary || result.text,
+  );
+
+  // Promote preferences and behavior corrections into permanent feedback_rules.
+  // These are what change how OC acts on every future run.
+  const promotable = [...distill.preferences, ...distill.behavior_corrections];
+  if (promotable.length) {
+    const existing =
+      ((await getAgentMemory(AGENT_NAME, 'feedback_rules')) as string[] | null) ?? [];
+    const today = new Date().toISOString().slice(0, 10);
+    const newRules = promotable.map((r) => `[CHAT ${today}] ${r}`);
+    // De-dupe against existing to avoid growing unbounded with restatements.
+    const existingTexts = new Set(existing.map((r) => r.replace(/^\[[^\]]+\]\s*/, '').trim()));
+    const toAdd = newRules.filter(
+      (r) => !existingTexts.has(r.replace(/^\[[^\]]+\]\s*/, '').trim()),
+    );
+    if (toAdd.length) {
+      await setAgentMemory(AGENT_NAME, 'feedback_rules', [...existing, ...toAdd]);
+    }
+  }
 }
 
 export async function runOpsChiefDailyBriefing(
@@ -309,7 +443,7 @@ export async function runOpsChiefDailyBriefing(
             errors,
           )
         : [];
-      const [todaysTasks, overdueTasks, activeIntentions, activeOutcomes, initiatives, recentRunsRaw, pendingQueueItems] =
+      const [todaysTasks, overdueTasks, activeIntentions, activeOutcomes, initiatives, recentRunsRaw, pendingQueueItems, recentFeedback] =
         await Promise.all([
           safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
           safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
@@ -318,6 +452,7 @@ export async function runOpsChiefDailyBriefing(
           safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
           safe('recentRuns', () => getRecentAgentRuns(15), [] as any[], errors),
           safe('pendingQueue', () => getQueueItems('pending', 10), [] as any[], errors),
+          safe('recentFeedback', () => getRecentFeedback(AGENT_NAME, 24), [] as RecentFeedbackItem[], errors),
         ]);
       // Filter runs to last 24 hours
       const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -337,6 +472,7 @@ export async function runOpsChiefDailyBriefing(
         initiatives,
         recentAgentRuns,
         pendingQueueItems,
+        recentFeedback,
         errors,
       };
     },
@@ -344,20 +480,7 @@ export async function runOpsChiefDailyBriefing(
       `today=${ctx.todayIso} urgent=${ctx.urgentProjects.length} urgent_subs=${ctx.urgentSubtasks.length} overdue=${ctx.overdueTasks.length} today_tasks=${ctx.todaysTasks.length} outcomes=${ctx.activeOutcomes.length} errors=${Object.keys(ctx.errors).length}`,
     buildPrompt: async (ctx) => {
       const memory = await getAgentMemory(AGENT_NAME);
-      let memoryBlock = '';
-      if (Object.keys(memory).length) {
-        const parts: string[] = [];
-        if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
-          parts.push(
-            '# Persistent Rules (from past feedback)\nFollow these rules — they are direct instructions from Briana based on prior briefings.\n' +
-              memory.feedback_rules.map((r: string) => `- ${r}`).join('\n'),
-          );
-        }
-        if (memory.chat_summary) {
-          parts.push(`# Yesterday's Chat Summary\n${memory.chat_summary}`);
-        }
-        if (parts.length) memoryBlock = '\n\n---\n\n' + parts.join('\n\n');
-      }
+      const memoryBlock = renderMemoryBlock(memory);
       return {
         system:
           loadContextFile('system.md') +

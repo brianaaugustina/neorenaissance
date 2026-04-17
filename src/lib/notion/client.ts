@@ -591,6 +591,34 @@ export async function getContentEntriesForWeek(
 }
 
 // ---------------------------------------------------------------------------
+// Notion file uploads — two-step flow: create upload, then send file bytes.
+// Returns the file_upload_id to reference in a page's Files property.
+// ---------------------------------------------------------------------------
+export async function uploadFileToNotion(
+  data: Buffer,
+  filename: string,
+  contentType: string,
+): Promise<string> {
+  const upload: any = await (notion as any).fileUploads.create({
+    mode: 'single_part',
+    filename,
+    content_type: contentType,
+  });
+  const fileUploadId: string = upload.id;
+
+  // SDK accepts Blob; construct one from the buffer so Node runtime works too.
+  // Copy into a fresh Uint8Array to satisfy Blob's BlobPart typing.
+  const bytes = new Uint8Array(data.byteLength);
+  bytes.set(data);
+  const blob = new Blob([bytes], { type: contentType });
+  await (notion as any).fileUploads.send({
+    file_upload_id: fileUploadId,
+    file: { filename, data: blob },
+  });
+  return fileUploadId;
+}
+
+// ---------------------------------------------------------------------------
 // Content DB — writes for Showrunner content calendar
 // ---------------------------------------------------------------------------
 export interface CreateContentParams {
@@ -602,6 +630,9 @@ export interface CreateContentParams {
   contentPillar?: string[];
   publishDate?: string;
   ventureIds?: string[];
+  // file_upload ids from uploadFileToNotion, attached to the Files property.
+  fileUploadIds?: string[];
+  filesPropertyName?: string; // Defaults to 'Files'; override if DB names it differently.
 }
 
 export async function createContentEntry(params: CreateContentParams): Promise<string> {
@@ -630,6 +661,16 @@ export async function createContentEntry(params: CreateContentParams): Promise<s
   }
   if (params.ventureIds?.length) {
     properties.Ventures = { relation: params.ventureIds.map((id) => ({ id })) };
+  }
+  if (params.fileUploadIds?.length) {
+    const propName = params.filesPropertyName ?? 'Files';
+    properties[propName] = {
+      files: params.fileUploadIds.map((id, i) => ({
+        type: 'file_upload',
+        file_upload: { id },
+        name: `clip-${i + 1}`,
+      })),
+    };
   }
 
   const res: any = await notion.pages.create({

@@ -89,6 +89,44 @@ export async function setAgentMemory(agent: string, key: string, value: unknown)
 }
 
 // ============================================================
+// Recent feedback — non-approved queue items for the feedback loop
+// ============================================================
+export interface RecentFeedbackItem {
+  id: string;
+  type: string;
+  title: string;
+  summary: string | null;
+  status: QueueStatus;
+  feedback: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+// Pulls items Briana rejected, deferred, or edited (i.e. left feedback on)
+// within the window. Drives the short-term feedback loop so every agent run
+// sees what Briana corrected recently and can avoid repeating the same choice.
+export async function getRecentFeedback(
+  agentName: string,
+  hoursAgo: number,
+): Promise<RecentFeedbackItem[]> {
+  const cutoff = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
+  const { data, error } = await supabaseAdmin()
+    .from('approval_queue')
+    .select('id, type, title, summary, status, feedback, created_at, reviewed_at')
+    .eq('agent_name', agentName)
+    .in('status', ['rejected', 'deferred', 'approved'])
+    .or(`reviewed_at.gte.${cutoff},created_at.gte.${cutoff}`)
+    .order('reviewed_at', { ascending: false, nullsFirst: false })
+    .limit(25);
+  if (error) throw error;
+  // Only keep items with feedback text OR a non-approved status — approved
+  // items without feedback teach nothing.
+  return (data ?? []).filter(
+    (r: any) => r.feedback || r.status !== 'approved',
+  ) as RecentFeedbackItem[];
+}
+
+// ============================================================
 // Agent runs (observability)
 // ============================================================
 export async function logRunStart(agent: string, trigger: 'cron' | 'manual' | 'chat') {

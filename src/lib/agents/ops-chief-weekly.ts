@@ -10,8 +10,14 @@ import {
   type Outcome,
   type Task,
 } from '../notion/client';
-import { getAgentMemory } from '../supabase/client';
+import {
+  getAgentMemory,
+  getRecentAgentRuns,
+  getRecentFeedback,
+  type RecentFeedbackItem,
+} from '../supabase/client';
 import { loadContextFile, runAgent, type RunAgentResult } from './base';
+import { renderMemoryBlock } from './ops-chief';
 
 const AGENT_NAME = 'ops_chief';
 
@@ -34,6 +40,8 @@ export interface WeeklyPlannerContext {
   activeIntentions: Intention[];
   activeOutcomes: Outcome[];
   initiatives: Initiative[];
+  recentAgentRuns: any[];
+  recentFeedback: RecentFeedbackItem[];
   errors: Record<string, string>;
 }
 
@@ -184,7 +192,7 @@ export async function runWeeklyPlanner(
 
     gatherContext: async () => {
       const errors: Record<string, string> = {};
-      const [weekTasks, overdueTasks, monthlyPriorities, activeIntentions, activeOutcomes, initiatives] =
+      const [weekTasks, overdueTasks, monthlyPriorities, activeIntentions, activeOutcomes, initiatives, recentAgentRuns, recentFeedback] =
         await Promise.all([
           safe('weekTasks', () => getWeekTasks(weekStartIso, weekEndIso), [] as Task[], errors),
           safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
@@ -192,6 +200,8 @@ export async function runWeeklyPlanner(
           safe('activeIntentions', () => getActiveIntentions(), [] as Intention[], errors),
           safe('activeOutcomes', () => getActiveOutcomes(), [] as Outcome[], errors),
           safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
+          safe('recentAgentRuns', () => getRecentAgentRuns(30), [] as any[], errors),
+          safe('recentFeedback', () => getRecentFeedback(AGENT_NAME, 24 * 7), [] as RecentFeedbackItem[], errors),
         ]);
       return {
         weekStartIso,
@@ -202,21 +212,18 @@ export async function runWeeklyPlanner(
         activeIntentions,
         activeOutcomes,
         initiatives,
+        recentAgentRuns,
+        recentFeedback,
         errors,
       };
     },
 
     summarizeContext: (ctx) =>
-      `week=${ctx.weekStartIso}→${ctx.weekEndIso} tasks=${ctx.weekTasks.length} overdue=${ctx.overdueTasks.length} priorities=${ctx.monthlyPriorities.length} outcomes=${ctx.activeOutcomes.length}`,
+      `week=${ctx.weekStartIso}→${ctx.weekEndIso} tasks=${ctx.weekTasks.length} overdue=${ctx.overdueTasks.length} priorities=${ctx.monthlyPriorities.length} outcomes=${ctx.activeOutcomes.length} feedback=${ctx.recentFeedback.length} agent_runs=${ctx.recentAgentRuns.length}`,
 
     buildPrompt: async (ctx) => {
       const memory = await getAgentMemory(AGENT_NAME);
-      let memoryBlock = '';
-      if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
-        memoryBlock =
-          '\n\n---\n\n# Persistent Rules (from past feedback)\n' +
-          memory.feedback_rules.map((r: string) => `- ${r}`).join('\n');
-      }
+      const memoryBlock = renderMemoryBlock(memory);
 
       const system =
         loadContextFile('system.md') +
@@ -243,6 +250,23 @@ export async function runWeeklyPlanner(
       const priorityBlock = ctx.monthlyPriorities.length
         ? ctx.monthlyPriorities.map((t) => renderTaskForPlan(t, ctx.initiatives)).join('\n')
         : '(none)';
+
+      const agentActivityBlock = ctx.recentAgentRuns.length
+        ? ctx.recentAgentRuns
+            .slice(0, 15)
+            .map((r: any) => `- ${r.agent_name} (${r.trigger}) — ${r.status}${r.output_summary ? `: ${r.output_summary}` : ''}`)
+            .join('\n')
+        : '(no agent activity this week)';
+
+      const feedbackBlock = ctx.recentFeedback.length
+        ? ctx.recentFeedback
+            .map((f) => {
+              const date = (f.reviewed_at ?? f.created_at).slice(0, 10);
+              const fb = f.feedback ? ` — "${f.feedback}"` : '';
+              return `- [${f.status.toUpperCase()} ${date}] ${f.type}: "${f.title}"${fb}`;
+            })
+            .join('\n')
+        : '(no recent corrections)';
 
       const outcomesBlock = ctx.activeOutcomes.length
         ? ctx.activeOutcomes
@@ -275,6 +299,14 @@ ${outcomesBlock}
 
 # INITIATIVES
 ${ctx.initiatives.map((i) => `- ${i.name} [${i.status ?? 'no status'}]`).join('\n') || '(none)'}
+
+# AGENT ACTIVITY (past week)
+Cross-agent signal — what other agents did that should shape this week's plan.
+${agentActivityBlock}
+
+# RECENT FEEDBACK (last 7 days)
+Briana's corrections and rejections. Don't repeat the same choices she just corrected.
+${feedbackBlock}
 
 Produce the weekly plan following the format in your system prompt. Be concrete about which tasks go on which day and why. Include RESCHEDULE and NEW TASKS sections.`;
 

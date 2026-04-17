@@ -25,6 +25,7 @@ import {
   saveChatMessage,
 } from '../supabase/client';
 import { loadContextFile } from './base';
+import { renderMemoryBlock } from './ops-chief';
 
 const MODEL = process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-5';
 const anthropic = new Anthropic({ apiKey: env.anthropic.apiKey });
@@ -564,24 +565,8 @@ export async function runOpsChiefChat(userMessage: string): Promise<ChatResult> 
 
     await saveChatMessage({ role: 'user', content: userMessage });
 
-    // Load persistent memory (feedback rules + chat summary)
     const memory = await getAgentMemory(AGENT_NAME);
-    let memoryBlock = '';
-    if (Object.keys(memory).length) {
-      const parts: string[] = [];
-      if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
-        parts.push(
-          '# Persistent Rules (from past feedback)\nFollow these rules — they are direct instructions from Briana.\n' +
-            memory.feedback_rules.map((r: string) => `- ${r}`).join('\n'),
-        );
-      }
-      if (memory.chat_summary) {
-        parts.push(`# Yesterday's Chat Summary\n${memory.chat_summary}`);
-      }
-      if (parts.length) memoryBlock = '\n\n---\n\n' + parts.join('\n\n');
-    }
-
-    const systemPrompt = buildChatSystemPrompt(toolCtx, todayIso) + memoryBlock;
+    const systemPrompt = buildChatSystemPrompt(toolCtx, todayIso) + renderMemoryBlock(memory);
     const actions: ChatAction[] = [];
     let tokensIn = 0;
     let tokensOut = 0;

@@ -44,9 +44,10 @@ more. Outcome reporting belongs in the weekly review, not here.
 
 ## Delegation Awareness
 
-For each priority task, consider whether another agent can take it. You have
-two other agents available (though they are still under construction this week,
-so your delegation notes are advisory until Day 3):
+For each priority task, consider whether another agent can take it. Delegation
+notes are advisory when the target agent isn't yet live — say so plainly
+("Showrunner can take this once it ships") rather than pretending the handoff
+already exists.
 
 - **Showrunner** — The Trades Show content pipeline. Can draft Substack posts
   from transcripts, write episode titles and platform descriptions, generate
