@@ -7,6 +7,7 @@ interface QueueCardProps {
     id: string;
     agent_name: string;
     type: string;
+    status?: string;
     title: string;
     summary: string | null;
     full_output: any;
@@ -23,8 +24,11 @@ export function QueueCard({ item }: QueueCardProps) {
 
   const briefing = item.full_output?.briefing_markdown as string | undefined;
   const showrunner = item.full_output?.post_draft ? item.full_output : null;
+  const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
-  const hasExpandable = !!(briefing || showrunner);
+  const [showExecutePreview, setShowExecutePreview] = useState(false);
+  const hasExpandable = !!(briefing || showrunner || weeklyPlan);
+  const isApprovedPlan = weeklyPlan && item.status === 'approved';
 
   const act = (status: 'approved' | 'rejected' | 'deferred') => {
     setError(null);
@@ -130,6 +134,67 @@ export function QueueCard({ item }: QueueCardProps) {
         </div>
       )}
 
+      {/* Weekly plan */}
+      {expanded && weeklyPlan && (
+        <div className="mb-3">
+          <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap text-sm max-h-[400px] overflow-y-auto">
+            {weeklyPlan.plan_markdown}
+          </div>
+          {weeklyPlan.reschedules?.length > 0 && (
+            <div className="mt-3 text-xs muted">
+              {weeklyPlan.reschedules.length} task(s) to reschedule
+              {weeklyPlan.new_tasks?.length > 0 && `, ${weeklyPlan.new_tasks.length} new task(s) to create`}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Execute preview for approved weekly plans */}
+      {isApprovedPlan && showExecutePreview && (
+        <div className="border rounded-md p-3 mb-3 text-sm" style={{ borderColor: 'var(--gold)' }}>
+          <p className="serif mb-2">Changes to execute:</p>
+          {weeklyPlan.reschedules?.length > 0 && (
+            <div className="mb-2">
+              <span className="text-xs muted uppercase tracking-wider">Reschedule ({weeklyPlan.reschedules.length})</span>
+              <ul className="mt-1 space-y-1 text-xs muted">
+                {weeklyPlan.reschedules.map((r: any, i: number) => (
+                  <li key={i}>{r.task_title ?? r.taskTitle} → {r.new_date ?? r.newDate}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {weeklyPlan.new_tasks?.length > 0 && (
+            <div className="mb-2">
+              <span className="text-xs muted uppercase tracking-wider">Create ({weeklyPlan.new_tasks.length})</span>
+              <ul className="mt-1 space-y-1 text-xs muted">
+                {weeklyPlan.new_tasks.map((t: any, i: number) => (
+                  <li key={i}>{t.title} — {t.to_do_date ?? t.toDoDate}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setError(null);
+              startTransition(async () => {
+                try {
+                  const res = await fetch(`/api/queue/${item.id}/execute`, { method: 'POST' });
+                  if (!res.ok) throw new Error((await res.json()).error || 'Execute failed');
+                  setHidden(true);
+                } catch (e: any) {
+                  setError(e.message);
+                }
+              });
+            }}
+            disabled={isPending}
+            className="mt-2 px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40"
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+          >
+            {isPending ? 'Executing...' : 'Confirm & Execute'}
+          </button>
+        </div>
+      )}
+
       {hasExpandable && (
         <button
           onClick={() => setExpanded((v) => !v)}
@@ -139,7 +204,20 @@ export function QueueCard({ item }: QueueCardProps) {
             ? 'Collapse'
             : briefing
               ? 'Read full briefing'
-              : 'View content package'}
+              : weeklyPlan
+                ? 'View weekly plan'
+                : 'View content package'}
+        </button>
+      )}
+
+      {/* Execute Plan button for approved recommendations */}
+      {isApprovedPlan && !showExecutePreview && (
+        <button
+          onClick={() => setShowExecutePreview(true)}
+          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition mb-3 block"
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+        >
+          Execute Plan
         </button>
       )}
 

@@ -110,6 +110,12 @@ reshapes the day.}
 - {Carry-forward items, upcoming deadlines in 2–3 days, outcomes at risk}
 - *(Omit this section entirely if nothing qualifies.)*
 
+## Agent activity
+
+- {What agents did overnight — completed runs, what they produced}
+- {Pending items in the queue that need Briana's review}
+- *(Omit this section entirely if no agent activity in the last 24 hours.)*
+
 ---
 
 **First move:** {one sentence — what to open or start right now}

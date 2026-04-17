@@ -542,6 +542,55 @@ export async function searchOutreach(query: string, limit = 10): Promise<NotionR
 }
 
 // ---------------------------------------------------------------------------
+// TTS-specific queries for Showrunner daily check
+// ---------------------------------------------------------------------------
+export async function getTTSTasksForWeek(
+  startIso: string,
+  endIso: string,
+  initiativeId: string,
+): Promise<Task[]> {
+  const res: any = await queryDs(env.notion.tasksDbId, {
+    filter: {
+      and: [
+        { property: 'Initiative', relation: { contains: initiativeId } },
+        { property: 'To-Do Date', date: { on_or_after: startIso } },
+        { property: 'To-Do Date', date: { on_or_before: endIso } },
+        ...OPEN_STATUS_FILTER.and,
+      ],
+    },
+    page_size: 50,
+  });
+  return res.results.map(mapTask);
+}
+
+export async function getContentEntriesForWeek(
+  startIso: string,
+  endIso: string,
+): Promise<NotionRecord[]> {
+  const contentDbId = env.notion.contentDbId;
+  if (!contentDbId) return [];
+  const res: any = await queryDs(contentDbId, {
+    filter: {
+      and: [
+        { property: 'Time', date: { on_or_after: startIso } },
+        { property: 'Time', date: { on_or_before: endIso } },
+        { property: 'Status', select: { does_not_equal: '✅ Published' } },
+        { property: 'Status', select: { does_not_equal: '✅ Done' } },
+      ],
+    },
+    page_size: 50,
+  });
+  return res.results.map((page: any) => ({
+    id: page.id,
+    title: getTitle(page),
+    status: getSelect(page, 'Status'),
+    contentType: getMultiSelect(page, 'Content Type'),
+    publishDate: getDate(page, 'Time'),
+    raw: page,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Content DB — writes for Showrunner content calendar
 // ---------------------------------------------------------------------------
 export interface CreateContentParams {

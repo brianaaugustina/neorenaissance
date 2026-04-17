@@ -107,6 +107,17 @@ export async function loadDashboardData(): Promise<DashboardData> {
     return when && when.slice(0, 10) === todayIso;
   });
 
+  // Include approved recommendations (e.g., weekly plans awaiting execution)
+  const approvedRecs = await safe(
+    'approvedRecs',
+    async () => {
+      const items = await getQueueItems('approved', 10);
+      return items.filter((i: any) => i.type === 'recommendation');
+    },
+    [] as any[],
+    errors,
+  );
+
   return {
     todayIso,
     weekStartIso,
@@ -115,7 +126,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     overdueTasks,
     weekTasks,
     initiatives,
-    pendingQueue,
+    pendingQueue: [...pendingQueue, ...approvedRecs],
     completedToday,
     chatHistory,
     agentRuns,

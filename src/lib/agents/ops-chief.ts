@@ -11,7 +11,13 @@ import {
   type Outcome,
   type Task,
 } from '../notion/client';
-import { getAgentMemory, getChatHistory, setAgentMemory } from '../supabase/client';
+import {
+  getAgentMemory,
+  getChatHistory,
+  getQueueItems,
+  getRecentAgentRuns,
+  setAgentMemory,
+} from '../supabase/client';
 import { loadContextFile, runAgent, think, type RunAgentResult } from './base';
 
 const AGENT_NAME = 'ops_chief';
@@ -38,6 +44,8 @@ export interface OpsChiefDailyContext {
   activeIntentions: Intention[];
   activeOutcomes: Outcome[];
   initiatives: Initiative[];
+  recentAgentRuns: any[];
+  pendingQueueItems: any[];
   errors: Record<string, string>;
 }
 
@@ -146,6 +154,20 @@ function renderUrgentProject(
   return `${base}  ${label}`;
 }
 
+function renderAgentActivity(ctx: OpsChiefDailyContext): string {
+  const lines: string[] = [];
+  for (const run of ctx.recentAgentRuns) {
+    const status = run.status === 'success' ? 'completed' : run.status;
+    lines.push(
+      `- ${run.agent_name} (${run.trigger}) — ${status}${run.output_summary ? `: ${run.output_summary}` : ''}`,
+    );
+  }
+  for (const item of ctx.pendingQueueItems) {
+    lines.push(`- PENDING REVIEW: ${item.agent_name} — "${item.title}" [${item.type}]`);
+  }
+  return lines.length ? lines.join('\n') : '(no agent activity in the last 24 hours)';
+}
+
 export function buildUserPrompt(ctx: OpsChiefDailyContext): string {
   const { initiatives, activeOutcomes: outcomes, todayIso } = ctx;
 
@@ -227,6 +249,9 @@ ${outcomesRef}
 
 # INITIATIVES ON FILE
 ${initiatives.map((i) => `- ${i.name} [${i.status ?? 'no status'}]`).join('\n') || '(none)'}
+
+# AGENT ACTIVITY (last 24 hours)
+${renderAgentActivity(ctx)}
 ${errorBlock}
 
 Now produce Briana's daily briefing following the format and prioritization
@@ -284,14 +309,21 @@ export async function runOpsChiefDailyBriefing(
             errors,
           )
         : [];
-      const [todaysTasks, overdueTasks, activeIntentions, activeOutcomes, initiatives] =
+      const [todaysTasks, overdueTasks, activeIntentions, activeOutcomes, initiatives, recentRunsRaw, pendingQueueItems] =
         await Promise.all([
           safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
           safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
           safe('activeIntentions', () => getActiveIntentions(), [] as Intention[], errors),
           safe('activeOutcomes', () => getActiveOutcomes(), [] as Outcome[], errors),
           safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
+          safe('recentRuns', () => getRecentAgentRuns(15), [] as any[], errors),
+          safe('pendingQueue', () => getQueueItems('pending', 10), [] as any[], errors),
         ]);
+      // Filter runs to last 24 hours
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const recentAgentRuns = recentRunsRaw.filter(
+        (r: any) => r.started_at >= cutoff,
+      );
       return {
         todayIso,
         dayLabel,
@@ -303,6 +335,8 @@ export async function runOpsChiefDailyBriefing(
         activeIntentions,
         activeOutcomes,
         initiatives,
+        recentAgentRuns,
+        pendingQueueItems,
         errors,
       };
     },
