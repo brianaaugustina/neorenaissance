@@ -150,7 +150,7 @@ export function ShowrunnerInput() {
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.md,.srt,.text"
+            accept="text/plain,text/markdown,text/*,.txt,.md,.srt,.text,.vtt"
             onChange={handleTranscriptFile}
             className="hidden"
             disabled={isPending}
