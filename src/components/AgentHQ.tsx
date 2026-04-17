@@ -1,5 +1,6 @@
 import { AgentUpdates } from './AgentUpdates';
 import { QueueCard } from './QueueCard';
+import { ShowrunnerInput } from './ShowrunnerInput';
 
 interface AgentHQProps {
   pending: any[];
@@ -28,6 +29,15 @@ export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
           Agent Updates
         </h3>
         <AgentUpdates runs={agentRuns} />
+      </div>
+
+      {/* ---- Showrunner ---- */}
+      <hr style={{ borderColor: 'var(--border)' }} />
+      <div>
+        <h3 className="serif text-sm uppercase tracking-widest muted mb-3">
+          Run Showrunner
+        </h3>
+        <ShowrunnerInput />
       </div>
 
       {/* ---- Divider ---- */}

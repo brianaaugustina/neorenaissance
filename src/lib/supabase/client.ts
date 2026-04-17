@@ -143,6 +143,7 @@ export async function getRecentAgentRuns(limit = 20) {
     .select(
       'id, agent_name, trigger, started_at, completed_at, status, duration_ms, output_summary, cost_estimate',
     )
+    .neq('trigger', 'chat')
     .order('started_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

@@ -540,3 +540,52 @@ export async function searchContacts(query: string, limit = 10): Promise<NotionR
 export async function searchOutreach(query: string, limit = 10): Promise<NotionRecord[]> {
   return searchDb(env.notion.outreachDbId, 'Outreach', query, limit);
 }
+
+// ---------------------------------------------------------------------------
+// Content DB — writes for Showrunner content calendar
+// ---------------------------------------------------------------------------
+export interface CreateContentParams {
+  name: string;
+  status?: string;
+  contentType?: string[];
+  platforms?: string[];
+  caption?: string;
+  contentPillar?: string[];
+  publishDate?: string;
+  ventureIds?: string[];
+}
+
+export async function createContentEntry(params: CreateContentParams): Promise<string> {
+  const contentDbId = env.notion.contentDbId;
+  if (!contentDbId) throw new Error('NOTION_CONTENT_DB_ID not configured');
+  const dsId = await resolveDataSourceId(contentDbId);
+
+  const properties: Record<string, unknown> = {
+    Name: { title: [{ type: 'text', text: { content: params.name } }] },
+  };
+  if (params.status) properties.Status = { select: { name: params.status } };
+  if (params.contentType?.length) {
+    properties['Content Type'] = { multi_select: params.contentType.map((name) => ({ name })) };
+  }
+  if (params.platforms?.length) {
+    properties.Platforms = { multi_select: params.platforms.map((name) => ({ name })) };
+  }
+  if (params.caption) {
+    properties.Caption = { rich_text: [{ type: 'text', text: { content: params.caption } }] };
+  }
+  if (params.contentPillar?.length) {
+    properties['Content Pillar'] = { multi_select: params.contentPillar.map((name) => ({ name })) };
+  }
+  if (params.publishDate) {
+    properties.Time = { date: { start: params.publishDate } };
+  }
+  if (params.ventureIds?.length) {
+    properties.Ventures = { relation: params.ventureIds.map((id) => ({ id })) };
+  }
+
+  const res: any = await notion.pages.create({
+    parent: { type: 'data_source_id', data_source_id: dsId } as any,
+    properties: properties as any,
+  });
+  return res.id as string;
+}

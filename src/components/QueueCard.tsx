@@ -22,6 +22,9 @@ export function QueueCard({ item }: QueueCardProps) {
   const [error, setError] = useState<string | null>(null);
 
   const briefing = item.full_output?.briefing_markdown as string | undefined;
+  const showrunner = item.full_output?.post_draft ? item.full_output : null;
+  const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
+  const hasExpandable = !!(briefing || showrunner);
 
   const act = (status: 'approved' | 'rejected' | 'deferred') => {
     setError(null);
@@ -62,18 +65,81 @@ export function QueueCard({ item }: QueueCardProps) {
         <p className="muted text-sm mb-3 line-clamp-2">{item.summary}</p>
       )}
 
+      {/* Ops Chief briefing */}
       {expanded && briefing && (
         <div className="prose prose-invert prose-sm max-w-none mb-3 whitespace-pre-wrap text-sm">
           {briefing}
         </div>
       )}
 
-      {briefing && (
+      {/* Showrunner content package */}
+      {expanded && showrunner && (
+        <div className="mb-3">
+          <div className="flex gap-2 mb-3">
+            {(['post', 'meta', 'captions'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="px-3 py-1 text-xs rounded-md border transition"
+                style={{
+                  borderColor: activeTab === tab ? 'var(--gold)' : 'var(--border)',
+                  color: activeTab === tab ? 'var(--gold)' : 'var(--muted)',
+                }}
+              >
+                {tab === 'post' ? 'Post Draft' : tab === 'meta' ? 'Titles & Descriptions' : 'Social Captions'}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'post' && (
+            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap text-sm max-h-[400px] overflow-y-auto">
+              {showrunner.post_draft}
+            </div>
+          )}
+
+          {activeTab === 'meta' && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-xs muted uppercase tracking-wider">Episode Title</span>
+                <p className="serif mt-1">{showrunner.episode_title}</p>
+              </div>
+              <div>
+                <span className="text-xs muted uppercase tracking-wider">Substack Subtitle</span>
+                <p className="mt-1">{showrunner.substack_subtitle}</p>
+              </div>
+              <div>
+                <span className="text-xs muted uppercase tracking-wider">YouTube Description</span>
+                <pre className="mt-1 whitespace-pre-wrap text-xs muted">{showrunner.youtube_description}</pre>
+              </div>
+              <div>
+                <span className="text-xs muted uppercase tracking-wider">Spotify Description</span>
+                <p className="mt-1 text-xs muted">{showrunner.spotify_description}</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'captions' && (
+            <ol className="space-y-3 text-sm list-decimal list-inside">
+              {(showrunner.social_captions as string[] ?? []).map((caption: string, i: number) => (
+                <li key={i} className="muted">
+                  {caption}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {hasExpandable && (
         <button
           onClick={() => setExpanded((v) => !v)}
           className="text-xs gold hover:underline mb-3"
         >
-          {expanded ? 'Collapse' : 'Read full briefing'}
+          {expanded
+            ? 'Collapse'
+            : briefing
+              ? 'Read full briefing'
+              : 'View content package'}
         </button>
       )}
 

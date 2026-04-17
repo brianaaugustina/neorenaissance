@@ -77,6 +77,7 @@ export interface RunAgentParams<C> {
   buildPrompt: (ctx: C) => { system: string; user: string } | Promise<{ system: string; user: string }>;
   buildDeposit: (ctx: C, result: ThinkResult) => Omit<DepositParams, 'agent_name' | 'run_id'>;
   onSuccess?: (ctx: C, result: ThinkResult, queueId: string) => Promise<void> | void;
+  maxTokens?: number;
 }
 
 export interface RunAgentResult<C> {
@@ -94,7 +95,7 @@ export async function runAgent<C>(p: RunAgentParams<C>): Promise<RunAgentResult<
     const result = await think({
       systemPrompt: prompts.system,
       userPrompt: prompts.user,
-      maxTokens: 3000,
+      maxTokens: p.maxTokens ?? 3000,
     });
     const depositFields = p.buildDeposit(ctx, result);
     const queueId = await depositToQueue({
