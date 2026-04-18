@@ -11,11 +11,24 @@ interface ClipInputPayload {
   fileFieldName?: string; // name of the multipart field holding the clip file
 }
 
-async function readJsonBody(req: Request): Promise<{ transcript: string; episodeType: EpisodeType; clips: ClipInput[] }> {
+interface RunPayload {
+  transcript: string;
+  episodeType: EpisodeType;
+  clips: ClipInput[];
+  guestName: string;
+  guestLinks: string;
+  timestampedOutline: string;
+}
+
+async function readJsonBody(req: Request): Promise<RunPayload> {
   const body: unknown = await req.json();
   const b = (body ?? {}) as Record<string, unknown>;
   const transcript = typeof b.transcript === 'string' ? b.transcript.trim() : '';
   const episodeType: EpisodeType = b.episodeType === 'interview' ? 'interview' : 'solo';
+  const guestName = typeof b.guestName === 'string' ? b.guestName.trim() : '';
+  const guestLinks = typeof b.guestLinks === 'string' ? b.guestLinks.trim() : '';
+  const timestampedOutline =
+    typeof b.timestampedOutline === 'string' ? b.timestampedOutline.trim() : '';
   const rawClips: unknown[] = Array.isArray(b.clips) ? b.clips : [];
   const clips: ClipInput[] = rawClips
     .map((raw) => {
@@ -29,17 +42,21 @@ async function readJsonBody(req: Request): Promise<{ transcript: string; episode
       };
     })
     .filter((c) => c.description);
-  return { transcript, episodeType, clips };
+  return { transcript, episodeType, clips, guestName, guestLinks, timestampedOutline };
 }
 
-async function readMultipartBody(
-  req: Request,
-): Promise<{ transcript: string; episodeType: EpisodeType; clips: ClipInput[] }> {
+async function readMultipartBody(req: Request): Promise<RunPayload> {
   const form = await req.formData();
   const transcript =
     typeof form.get('transcript') === 'string' ? String(form.get('transcript')).trim() : '';
   const episodeType: EpisodeType =
     form.get('episodeType') === 'interview' ? 'interview' : 'solo';
+  const guestName = typeof form.get('guestName') === 'string' ? String(form.get('guestName')).trim() : '';
+  const guestLinks = typeof form.get('guestLinks') === 'string' ? String(form.get('guestLinks')).trim() : '';
+  const timestampedOutline =
+    typeof form.get('timestampedOutline') === 'string'
+      ? String(form.get('timestampedOutline')).trim()
+      : '';
   const clipsJson = form.get('clips');
   const rawClips: ClipInputPayload[] =
     typeof clipsJson === 'string' ? JSON.parse(clipsJson) : [];
@@ -64,15 +81,16 @@ async function readMultipartBody(
     }
     if (clip.description) clips.push(clip);
   }
-  return { transcript, episodeType, clips };
+  return { transcript, episodeType, clips, guestName, guestLinks, timestampedOutline };
 }
 
 export async function POST(req: Request) {
   try {
     const contentType = req.headers.get('content-type') ?? '';
-    const { transcript, episodeType, clips } = contentType.includes('multipart/form-data')
+    const payload = contentType.includes('multipart/form-data')
       ? await readMultipartBody(req)
       : await readJsonBody(req);
+    const { transcript, episodeType, clips, guestName, guestLinks, timestampedOutline } = payload;
 
     if (!transcript) {
       return NextResponse.json({ error: 'transcript is required' }, { status: 400 });
@@ -84,7 +102,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const result = await runShowrunner({ transcript, episodeType, clips, trigger: 'manual' });
+    const result = await runShowrunner({
+      transcript,
+      episodeType,
+      clips,
+      guestName,
+      guestLinks,
+      timestampedOutline,
+      trigger: 'manual',
+    });
 
     return NextResponse.json({
       ok: true,

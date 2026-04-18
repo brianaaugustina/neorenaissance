@@ -26,6 +26,9 @@ export interface ShowrunnerContext {
   episodeType: EpisodeType;
   transcriptWordCount: number;
   clips: ClipInput[];
+  guestName: string;
+  guestLinks: string;
+  timestampedOutline: string;
   recentFeedback: RecentFeedbackItem[];
 }
 
@@ -168,11 +171,17 @@ export async function runShowrunner(
     transcript: string;
     episodeType: EpisodeType;
     clips?: ClipInput[];
+    guestName?: string;
+    guestLinks?: string;
+    timestampedOutline?: string;
     trigger?: 'manual' | 'cron' | 'chat';
   },
 ): Promise<ShowrunnerResult> {
   const clips = params.clips ?? [];
   const trigger = params.trigger ?? 'manual';
+  const guestName = (params.guestName ?? '').trim();
+  const guestLinks = (params.guestLinks ?? '').trim();
+  const timestampedOutline = (params.timestampedOutline ?? '').trim();
   let parsed: ParsedShowrunnerOutput | null = null;
 
   const result = await runAgent<ShowrunnerContext>({
@@ -187,12 +196,15 @@ export async function runShowrunner(
         episodeType: params.episodeType,
         transcriptWordCount: params.transcript.split(/\s+/).filter(Boolean).length,
         clips,
+        guestName,
+        guestLinks,
+        timestampedOutline,
         recentFeedback,
       };
     },
 
     summarizeContext: (ctx) =>
-      `type=${ctx.episodeType} words=${ctx.transcriptWordCount} clips=${ctx.clips.length} feedback=${ctx.recentFeedback.length}`,
+      `type=${ctx.episodeType} words=${ctx.transcriptWordCount} clips=${ctx.clips.length} guest=${ctx.guestName ? 'y' : 'n'} outline=${ctx.timestampedOutline ? 'provided' : 'generate'} feedback=${ctx.recentFeedback.length}`,
 
     buildPrompt: async (ctx) => {
       const memory = await getAgentMemory(AGENT_NAME);
@@ -253,14 +265,27 @@ YYYY-MM-DD
 ${clipInstructions}` +
         memoryBlock;
 
+      const guestBlock =
+        ctx.episodeType === 'interview' && (ctx.guestName || ctx.guestLinks)
+          ? `# GUEST\nName: ${ctx.guestName || '(not provided — infer from transcript)'}\nLinks (use verbatim in "Where to find {guest}" block):\n${ctx.guestLinks || '(none provided)'}\n\n`
+          : ctx.episodeType === 'interview'
+            ? `# GUEST\n(no guest info provided — infer name from transcript, omit "Where to find" links if you cannot find them)\n\n`
+            : `# GUEST\n(solo episode — omit the "Where to find {guest}" block entirely)\n\n`;
+
+      const outlineBlock = ctx.timestampedOutline
+        ? `# TIMESTAMPED OUTLINE (use verbatim in "In this episode" section)\n${ctx.timestampedOutline}\n\n`
+        : `# TIMESTAMPED OUTLINE\n(none provided — generate 10-20 chapter markers from the transcript in "MM:SS Title" format)\n\n`;
+
       const user =
         `Episode type: ${ctx.episodeType}\n` +
         `Word count: ${ctx.transcriptWordCount}\n` +
         `Today's date: ${new Date().toISOString().slice(0, 10)}\n\n` +
+        guestBlock +
+        outlineBlock +
         `# TRANSCRIPT\n\n${ctx.transcript}\n\n` +
         `# CLIPS\n${clipsBlock}` +
         feedbackBlock +
-        `\n\nProduce all outputs following the format in your system prompt.`;
+        `\n\nProduce all outputs following the format in your system prompt. For the YOUTUBE DESCRIPTION, follow the template in the pipeline workflow exactly — including emoji spacing, line breaks, and the fixed "Where to find The Trades Show" and "Where to find your host, Briana" blocks.`;
 
       return { system, user };
     },

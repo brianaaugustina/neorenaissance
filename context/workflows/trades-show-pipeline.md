@@ -77,25 +77,47 @@ Trades Are Back"
 
 ## YouTube Description
 
+Follow this template exactly. Emoji characters, line breaks, and phrasing
+of the "Where to find" blocks are fixed — reproduce them verbatim.
+
 **Structure:**
 ```
-{1-2 sentence episode summary}
+{Rich summary paragraph — one flowing paragraph (120-180 words). Open with
+"In this episode of The Trades Show, host Briana Ottoboni sits down with
+{guest name}, {guest descriptor}, inside {setting if notable}." (or, for
+solo: "In this episode of The Trades Show, host Briana Ottoboni {solo
+framing}.") Weave in the topics discussed, the guest's origin/journey, the
+creative or philosophical thread, and close with "Tune in to learn about..."}
 
-{Guest name and craft, if interview episode}
+The Trades Show is a show about modern craftwork — a conversation series with artisans and a return to what makes us human: the ability to create with our hands.
 
-{3-5 key topics discussed, as a brief list}
+️🕯️ Where to find {guest name}:
+{guest links — one per line, verbatim from the input}
 
----
+⚒ ️ Where to find The Trades Show:
+Instagram: @tradesshow (  / tradesshow   )
+TikTok: @tradesshow (  / tradesshow  )
+YouTube: ‪@tradesshow‬ 
+Substack: Trade Secrets (https://revivethetrades.substack.com/)
+Website: https://www.thetradesshow.co/
 
-The Trades Show is a San Francisco-based podcast exploring modern trades,
-artisan craftsmanship, and the makers keeping these practices alive.
+✨ Where to find your host, Briana:
+Instagram: @brianaaugustina (  / brianaaugustina  )
+Substack: https://brianaaugustina.substack.com/
+Website: https://www.brianaaugustina.com/
 
-Subscribe to Trade Secrets newsletter: revivethetrades.substack.com
-Instagram: @tradesshow
-TikTok: @tradesshow
-
-#TheTrades Show #Craftsmanship #ArtisanTrades
+🎬 In this episode:
+{timestamped outline — use the user-provided outline verbatim if supplied;
+otherwise generate one from the transcript in the same format: `MM:SS Title`
+or `HH:MM:SS Title`, one chapter per line}
 ```
+
+**Rules:**
+- If `episodeType = solo`, omit the "Where to find {guest}" block entirely.
+- Never reformat or "improve" the Trades Show / host link blocks — they must
+  match the template character for character, including the emoji spacing.
+- If the user provides a timestamped outline, use it verbatim. If not,
+  generate 10-20 chapter markers by scanning the transcript.
 
 ---
 

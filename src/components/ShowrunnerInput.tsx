@@ -15,6 +15,9 @@ export function ShowrunnerInput() {
   const [isPending, startTransition] = useTransition();
   const [episodeType, setEpisodeType] = useState<'solo' | 'interview'>('solo');
   const [transcript, setTranscript] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestLinks, setGuestLinks] = useState('');
+  const [timestampedOutline, setTimestampedOutline] = useState('');
   const [clips, setClips] = useState<ClipRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -59,6 +62,9 @@ export function ShowrunnerInput() {
           body: JSON.stringify({
             transcript,
             episodeType,
+            guestName: guestName.trim() || undefined,
+            guestLinks: guestLinks.trim() || undefined,
+            timestampedOutline: timestampedOutline.trim() || undefined,
             clips: hasClips
               ? clips
                   .filter((c) => c.description.trim())
@@ -83,6 +89,9 @@ export function ShowrunnerInput() {
           `Done — "${data.episodeTitle || 'Content package'}" queued with ${data.captionCount} clip caption${data.captionCount === 1 ? '' : 's'}.`,
         );
         setTranscript('');
+        setGuestName('');
+        setGuestLinks('');
+        setTimestampedOutline('');
         setClips([]);
         if (fileRef.current) fileRef.current.value = '';
         router.refresh();
@@ -140,6 +149,47 @@ export function ShowrunnerInput() {
         {wordCount > 0 && (
           <span className="text-xs muted">{wordCount.toLocaleString()} words</span>
         )}
+      </div>
+
+      {/* Guest fields — only for interview episodes */}
+      {episodeType === 'interview' && (
+        <div className="space-y-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+          <span className="text-xs muted uppercase tracking-wider">Guest</span>
+          <input
+            type="text"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            placeholder="Guest name (e.g. Sarah Larson, founder of Often Wander)"
+            className="w-full bg-transparent border rounded-md px-3 py-2 text-sm"
+            style={{ borderColor: 'var(--border)' }}
+            disabled={isPending}
+          />
+          <textarea
+            value={guestLinks}
+            onChange={(e) => setGuestLinks(e.target.value)}
+            placeholder={`Guest links — one per line, reproduced verbatim in the description:\nhttps://oftenwander.com/\n/ oftenwander`}
+            rows={3}
+            className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
+            style={{ borderColor: 'var(--border)' }}
+            disabled={isPending}
+          />
+        </div>
+      )}
+
+      {/* Timestamped outline */}
+      <div className="space-y-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+        <span className="text-xs muted uppercase tracking-wider">
+          Timestamped outline <span className="muted" style={{ opacity: 0.5 }}>(optional — leave empty to auto-generate)</span>
+        </span>
+        <textarea
+          value={timestampedOutline}
+          onChange={(e) => setTimestampedOutline(e.target.value)}
+          placeholder={`Paste chapter markers, one per line:\n00:00 Manifestation and the Birth of Often Wander\n01:25 Introducing Sarah Larson\n...`}
+          rows={4}
+          className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y font-mono"
+          style={{ borderColor: 'var(--border)' }}
+          disabled={isPending}
+        />
       </div>
 
       {/* Clips list */}
