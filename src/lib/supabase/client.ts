@@ -26,6 +26,7 @@ export interface DepositParams {
   full_output: unknown;
   initiative?: string;
   run_id?: string;
+  agent_output_id?: string;
 }
 
 export async function depositToQueue(p: DepositParams) {
@@ -39,6 +40,7 @@ export async function depositToQueue(p: DepositParams) {
       full_output: p.full_output,
       initiative: p.initiative,
       run_id: p.run_id,
+      agent_output_id: p.agent_output_id,
       status: 'pending',
     })
     .select('id')
