@@ -97,8 +97,20 @@ export function ShowrunnerInput() {
           });
         }
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed');
+        const raw = await res.text();
+        let data: { error?: string; episodeTitle?: string; captionCount?: number } = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          // Non-JSON response (usually a platform error page like 413 from Vercel)
+          if (res.status === 413) {
+            throw new Error(
+              'Video file too large for direct upload (Vercel 4.5MB limit). See alternative upload options.',
+            );
+          }
+          throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200) || res.statusText}`);
+        }
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         setSuccess(
           `Done — "${data.episodeTitle || 'Content package'}" queued with ${data.captionCount} clip caption${data.captionCount === 1 ? '' : 's'}.`,
         );
