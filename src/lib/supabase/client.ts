@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../env';
+import { todayIsoPT } from '../time';
 
 // Service-role client: server/CLI only. Never ship to the browser.
 let _admin: SupabaseClient | null = null;
@@ -209,11 +210,15 @@ export async function saveChatMessage(p: {
   content: string;
   metadata?: Record<string, unknown>;
 }) {
+  // Set session_date explicitly to PT today instead of relying on the DB's
+  // CURRENT_DATE (which is UTC on Supabase). Keeps chat buckets aligned with
+  // Briana's actual day.
   const { error } = await supabaseAdmin().from('chat_messages').insert({
     agent_name: p.agent_name ?? 'ops_chief',
     role: p.role,
     content: p.content,
     metadata: p.metadata,
+    session_date: todayIsoPT(),
   });
   if (error) throw error;
 }

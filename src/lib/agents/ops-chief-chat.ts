@@ -24,6 +24,7 @@ import {
   logRunStart,
   saveChatMessage,
 } from '../supabase/client';
+import { todayIsoPT } from '../time';
 import { loadContextFile } from './base';
 import { renderMemoryBlock } from './ops-chief';
 
@@ -543,7 +544,7 @@ Rules:
 type ClaudeMessage = Anthropic.MessageParam;
 
 export async function runOpsChiefChat(userMessage: string): Promise<ChatResult> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoPT();
   const run = await logRunStart(AGENT_NAME, 'chat');
 
   try {

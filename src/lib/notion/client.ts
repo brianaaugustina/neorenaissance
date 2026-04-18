@@ -1,5 +1,6 @@
 import { Client } from '@notionhq/client';
 import { env } from '../env';
+import { addDaysIso, todayIsoPT } from '../time';
 
 export const notion = new Client({ auth: env.notion.apiKey });
 
@@ -219,7 +220,7 @@ const OPEN_STATUS_FILTER = {
 };
 
 export async function getTodaysTasks(todayIso?: string): Promise<Task[]> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? todayIsoPT();
   const res: any = await queryDs(env.notion.tasksDbId, {
     filter: {
       and: [
@@ -233,8 +234,8 @@ export async function getTodaysTasks(todayIso?: string): Promise<Task[]> {
 }
 
 export async function getWeekTasks(startIso?: string, endIso?: string): Promise<Task[]> {
-  const start = startIso ?? new Date().toISOString().slice(0, 10);
-  const end = endIso ?? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const start = startIso ?? todayIsoPT();
+  const end = endIso ?? addDaysIso(start, 7);
   const res: any = await queryDs(env.notion.tasksDbId, {
     filter: {
       and: [
@@ -251,7 +252,7 @@ export async function getWeekTasks(startIso?: string, endIso?: string): Promise<
 // Overdue: open tasks whose To-Do Date is strictly before today. Deliberately
 // uncapped per product decision — nothing should silently disappear.
 export async function getOverdueTasks(todayIso?: string): Promise<Task[]> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? todayIsoPT();
   const res: any = await queryDs(env.notion.tasksDbId, {
     filter: {
       and: [
@@ -270,10 +271,8 @@ export async function getUrgentProjects(
   windowDays = 3,
   todayIso?: string,
 ): Promise<Task[]> {
-  const today = todayIso ?? new Date().toISOString().slice(0, 10);
-  const horizon = new Date(new Date(today).getTime() + windowDays * 864e5)
-    .toISOString()
-    .slice(0, 10);
+  const today = todayIso ?? todayIsoPT();
+  const horizon = addDaysIso(today, windowDays);
   const res: any = await queryDs(env.notion.tasksDbId, {
     filter: {
       and: [

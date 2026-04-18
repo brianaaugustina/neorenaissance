@@ -20,6 +20,7 @@ import {
   setAgentMemory,
   type RecentFeedbackItem,
 } from '../supabase/client';
+import { addDaysIso, dayLabelPT, todayIsoPT, weekdayPT } from '../time';
 import { loadContextFile, runAgent, think, type RunAgentResult } from './base';
 
 const AGENT_NAME = 'ops_chief';
@@ -54,15 +55,6 @@ export interface OpsChiefDailyContext {
 
 export interface DailyBriefingResult extends RunAgentResult<OpsChiefDailyContext> {
   briefing: string;
-}
-
-function formatDayLabel(d: Date): string {
-  return d.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
 }
 
 async function safe<T>(
@@ -363,7 +355,8 @@ function parseDistill(text: string): ChatDistill {
 }
 
 async function summarizeYesterdaysChat(): Promise<void> {
-  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  // Yesterday in PT so we pick up the correct session_date bucket.
+  const yesterday = addDaysIso(todayIsoPT(), -1);
   const history = await getChatHistory(yesterday, 100);
 
   if (history.length < 2) return; // Nothing meaningful to distill
@@ -403,7 +396,7 @@ Be specific and actionable. Omit pleasantries. If a category is empty, return an
   if (promotable.length) {
     const existing =
       ((await getAgentMemory(AGENT_NAME, 'feedback_rules')) as string[] | null) ?? [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoPT();
     const newRules = promotable.map((r) => `[CHAT ${today}] ${r}`);
     // De-dupe against existing to avoid growing unbounded with restatements.
     const existingTexts = new Set(existing.map((r) => r.replace(/^\[[^\]]+\]\s*/, '').trim()));
@@ -420,9 +413,9 @@ export async function runOpsChiefDailyBriefing(
   trigger: 'cron' | 'manual' | 'chat' = 'manual',
 ): Promise<DailyBriefingResult> {
   const now = new Date();
-  const todayIso = now.toISOString().slice(0, 10);
-  const dayLabel = formatDayLabel(now);
-  const ventureDay = VENTURE_DAYS[now.getDay()];
+  const todayIso = todayIsoPT(now);
+  const dayLabel = dayLabelPT(now);
+  const ventureDay = VENTURE_DAYS[weekdayPT(now)];
 
   const result = await runAgent<OpsChiefDailyContext>({
     agentName: AGENT_NAME,

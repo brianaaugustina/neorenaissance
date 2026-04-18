@@ -4,6 +4,7 @@ import {
   getRecentFeedback,
   type RecentFeedbackItem,
 } from '../supabase/client';
+import { todayIsoPT } from '../time';
 import { loadContextFile, runAgent, type RunAgentResult } from './base';
 
 const AGENT_NAME = 'showrunner';
@@ -282,7 +283,7 @@ ${clipInstructions}` +
       const user =
         `Episode type: ${ctx.episodeType}\n` +
         `Word count: ${ctx.transcriptWordCount}\n` +
-        `Today's date: ${new Date().toISOString().slice(0, 10)}\n\n` +
+        `Today's date: ${todayIsoPT()}\n\n` +
         guestBlock +
         outlineBlock +
         `# TRANSCRIPT\n\n${ctx.transcript}\n\n` +

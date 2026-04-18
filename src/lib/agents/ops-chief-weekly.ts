@@ -16,6 +16,7 @@ import {
   getRecentFeedback,
   type RecentFeedbackItem,
 } from '../supabase/client';
+import { addDaysIso, todayIsoPT, weekdayPT } from '../time';
 import { loadContextFile, runAgent, type RunAgentResult } from './base';
 import { renderMemoryBlock } from './ops-chief';
 
@@ -130,18 +131,15 @@ function parseWeeklyPlan(text: string): ParsedWeeklyPlan {
 // Helpers
 // ---------------------------------------------------------------------------
 function getUpcomingWeekBounds(): { start: string; end: string } {
+  // Anchor to today's calendar date in PT — UTC "now" can be a day ahead
+  // after 4-5pm PT and would shift the week boundary by one day.
   const now = new Date();
-  const dow = now.getDay(); // 0=Sun
-  // Find next Monday (or this Monday if today is Sunday)
+  const todayIso = todayIsoPT(now);
+  const dow = weekdayPT(now); // 0=Sun..6=Sat, in PT
   const daysUntilMonday = dow === 0 ? 1 : 8 - dow;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + daysUntilMonday);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return {
-    start: monday.toISOString().slice(0, 10),
-    end: sunday.toISOString().slice(0, 10),
-  };
+  const start = addDaysIso(todayIso, daysUntilMonday);
+  const end = addDaysIso(start, 6);
+  return { start, end };
 }
 
 async function safe<T>(
@@ -182,7 +180,7 @@ export async function runWeeklyPlanner(
   trigger: 'cron' | 'manual' | 'chat' = 'manual',
 ): Promise<WeeklyPlannerResult> {
   const { start: weekStartIso, end: weekEndIso } = getUpcomingWeekBounds();
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoPT();
   let parsed: ParsedWeeklyPlan | null = null;
 
   const result = await runAgent<WeeklyPlannerContext>({

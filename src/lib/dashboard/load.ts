@@ -7,6 +7,7 @@ import {
   type Task,
 } from '../notion/client';
 import { getChatHistory, getQueueItems, getRecentAgentRuns } from '../supabase/client';
+import { todayIsoPT } from '../time';
 
 export interface ChatMessageView {
   id: string;
@@ -61,7 +62,7 @@ async function safe<T>(
 }
 
 export async function loadDashboardData(): Promise<DashboardData> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoPT();
   const { start: weekStartIso, end: weekEndIso } = currentWeekBounds(todayIso);
   const errors: Record<string, string> = {};
 

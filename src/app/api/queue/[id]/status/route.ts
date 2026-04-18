@@ -7,6 +7,7 @@ import {
   updateQueueStatus,
   type QueueStatus,
 } from '@/lib/supabase/client';
+import { todayIsoPT } from '@/lib/time';
 
 export const maxDuration = 60;
 
@@ -48,7 +49,7 @@ export async function POST(
         const existing = (await getAgentMemory(agentName, 'feedback_rules')) as string[] | null;
         const rules = existing ?? [];
         const prefix = status === 'approved' ? 'APPROVED' : 'REJECTED';
-        rules.push(`[${prefix} ${new Date().toISOString().slice(0, 10)}] ${feedback}`);
+        rules.push(`[${prefix} ${todayIsoPT()}] ${feedback}`);
         await setAgentMemory(agentName, 'feedback_rules', rules);
       } catch (memErr) {
         console.error('Failed to persist feedback to agent memory:', memErr);

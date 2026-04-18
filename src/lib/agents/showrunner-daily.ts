@@ -10,6 +10,7 @@ import {
   logRunComplete,
   logRunStart,
 } from '../supabase/client';
+import { addDaysIso, todayIsoPT, weekdayPT } from '../time';
 
 const AGENT_NAME = 'showrunner';
 
@@ -55,23 +56,19 @@ function inferWhatNeeded(item: { title: string; status: string | null; contentTy
 
 function getWeekBounds(): { start: string; end: string } {
   const now = new Date();
-  const dow = now.getDay();
+  const todayIso = todayIsoPT(now);
+  const dow = weekdayPT(now);
   const mondayOffset = (dow + 6) % 7;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - mondayOffset);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return {
-    start: monday.toISOString().slice(0, 10),
-    end: sunday.toISOString().slice(0, 10),
-  };
+  const start = addDaysIso(todayIso, -mondayOffset);
+  const end = addDaysIso(start, 6);
+  return { start, end };
 }
 
 export async function runShowrunnerDailyCheck(
   trigger: 'cron' | 'manual' = 'cron',
 ): Promise<{ runId: string; queueId: string | null; itemCount: number }> {
   const run = await logRunStart(AGENT_NAME, trigger);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoPT();
 
   try {
     const initiatives = await getInitiatives();
