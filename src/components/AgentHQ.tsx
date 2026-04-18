@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { AgentUpdates } from './AgentUpdates';
 import { QueueCard } from './QueueCard';
-import { ShowrunnerInput } from './ShowrunnerInput';
 
 interface AgentHQProps {
   pending: any[];
@@ -14,13 +13,16 @@ export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
     <section className="card p-6 space-y-8">
       <div className="flex items-baseline justify-between">
         <h2 className="serif text-2xl">Agent HQ</h2>
-        <div className="text-xs muted flex gap-4">
+        <div className="text-xs muted flex gap-4 items-baseline">
           <span>
             <span className="gold">{pending.length}</span> pending
           </span>
           <span>
             <span style={{ color: 'var(--ok)' }}>{completedToday.length}</span> done today
           </span>
+          <Link href="/agents" className="gold hover:underline">
+            Run an agent →
+          </Link>
         </div>
       </div>
 
@@ -38,15 +40,6 @@ export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
           </Link>
         </div>
         <AgentUpdates runs={agentRuns} />
-      </div>
-
-      {/* ---- Showrunner ---- */}
-      <hr style={{ borderColor: 'var(--border)' }} />
-      <div>
-        <h3 className="serif text-sm uppercase tracking-widest muted mb-3">
-          Run Showrunner
-        </h3>
-        <ShowrunnerInput />
       </div>
 
       {/* ---- Divider ---- */}

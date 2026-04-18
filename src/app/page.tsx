@@ -1,8 +1,8 @@
+import Link from 'next/link';
 import { loadDashboardData } from '@/lib/dashboard/load';
 import { MyView } from '@/components/MyView';
 import { AgentHQ } from '@/components/AgentHQ';
 import { OpsChiefChat } from '@/components/OpsChiefChat';
-import { RunOpsChiefButton } from '@/components/RunOpsChiefButton';
 import { DashboardShell } from '@/components/DashboardShell';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,7 @@ export default async function Home() {
           <h1 className="serif text-3xl md:text-4xl gold">Artisanship</h1>
           <p className="muted text-sm mt-1">
             {new Date().toLocaleDateString('en-US', {
+              timeZone: 'America/Los_Angeles',
               weekday: 'long',
               month: 'long',
               day: 'numeric',
@@ -26,7 +27,13 @@ export default async function Home() {
             })}
           </p>
         </div>
-        <RunOpsChiefButton />
+        <Link
+          href="/agents"
+          className="px-4 py-2 text-sm rounded-lg border transition hover:bg-white/5"
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+        >
+          Agents →
+        </Link>
       </header>
 
       {errorEntries.length > 0 && (
