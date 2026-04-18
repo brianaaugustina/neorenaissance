@@ -36,7 +36,7 @@ export async function POST(
         return NextResponse.json(
           {
             error:
-              'Cannot retry: original inputs (transcript, clips) are not stored on this queue item. Re-run Showrunner manually from the dashboard.',
+              'This item was generated before retry was supported, so the transcript isn\'t stored on it. Your feedback is saved as a permanent rule — re-upload the transcript in the Run Showrunner box and the new run will apply your feedback automatically.',
           },
           { status: 400 },
         );

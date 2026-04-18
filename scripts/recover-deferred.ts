@@ -72,15 +72,21 @@ async function recover(id: string, printOnly: boolean) {
     return;
   }
 
-  if (item.status !== 'deferred') {
+  if (item.status === 'pending') {
+    console.log(`\nAlready pending — nothing to restore.`);
+    return;
+  }
+  if (!['deferred', 'rejected'].includes(item.status)) {
     console.log(
-      `\nNote: current status is "${item.status}", not "deferred". Not restoring.`,
+      `\nCurrent status is "${item.status}". Only deferred or rejected items can be restored to pending.`,
     );
     return;
   }
 
   await updateQueueStatus(id, 'pending');
-  console.log('\n✓ Restored to pending. Refresh the dashboard to see it in the queue.');
+  console.log(
+    `\n✓ Restored to pending (was "${item.status}"). Refresh the dashboard to see it in the queue.`,
+  );
 }
 
 async function main() {

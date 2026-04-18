@@ -64,8 +64,23 @@ export function QueueCard({ item }: QueueCardProps) {
         const retryPayload = await retryRes.json().catch(() => ({}));
         if (!retryRes.ok) {
           setIsRetrying(false);
+          // Retry failed — undo the rejection so the item isn't lost. The
+          // feedback text stays promoted in feedback_rules (it's useful there
+          // regardless), but the item returns to pending so Briana can decide
+          // whether to approve as-is or take another action.
+          try {
+            await fetch(`/api/queue/${item.id}/status`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'pending' }),
+            });
+          } catch {
+            // Best-effort undo; if this fails, the recover-deferred script
+            // can restore the item from the command line.
+          }
           throw new Error(
-            retryPayload.error || `Retry failed (${retryRes.status}). Original rejection saved.`,
+            retryPayload.error ||
+              `Retry failed (${retryRes.status}). Item restored to pending.`,
           );
         }
         setHidden(true);
