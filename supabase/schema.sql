@@ -1,6 +1,10 @@
 -- Artisanship Agents — Supabase schema
 -- Paste this into the Supabase SQL editor for project uqqaqkthgkjebsuyxbut.
 -- Run top-to-bottom. Safe to re-run: uses IF NOT EXISTS.
+--
+-- This file is the Phase 1 bootstrap snapshot (base tables only). All changes
+-- from 2026-04-18 onward live as numbered migrations in ./migrations/.
+-- Apply them in filename order after running this file.
 
 -- ============================================
 -- AGENT RUNS (Observability)
