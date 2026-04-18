@@ -16,7 +16,7 @@ export default async function Home() {
     <main className="min-h-screen px-4 py-6 md:px-10 md:py-10 max-w-[1600px] mx-auto">
       <header className="flex items-baseline justify-between mb-6 md:mb-8">
         <div>
-          <h1 className="serif text-3xl md:text-4xl gold">Artisanship</h1>
+          <h1 className="serif text-3xl md:text-4xl gold">Neorenaissance</h1>
           <p className="muted text-sm mt-1">
             {new Date().toLocaleDateString('en-US', {
               timeZone: 'America/Los_Angeles',

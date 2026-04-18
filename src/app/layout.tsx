@@ -15,13 +15,13 @@ const sans = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Artisanship Agents',
+  title: 'Neorenaissance',
   description: "Briana's agentic operating interface",
-  applicationName: 'Artisanship',
+  applicationName: 'Neorenaissance',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Artisanship',
+    title: 'Neorenaissance',
   },
   formatDetection: { telephone: false },
 };

@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Artisanship Agents',
-    short_name: 'Artisanship',
+    name: 'Neorenaissance',
+    short_name: 'Neorenaissance',
     description: "Briana's agentic operating interface",
     start_url: '/',
     display: 'standalone',
