@@ -1,3 +1,4 @@
+import { logOutput, setApprovalQueueId } from '../agent-outputs';
 import {
   getContentEntriesForWeek,
   getInitiatives,
@@ -131,19 +132,33 @@ export async function runShowrunnerDailyCheck(
       return { runId: run.id, queueId: null, itemCount: 0 };
     }
 
-    // Deposit report to queue
+    const reportPayload = {
+      date: todayIso,
+      week_range: `${start} to ${end}`,
+      items,
+    };
+
+    // Log the parent agent_outputs row first so the queue item can link to it.
+    const outputId = await logOutput({
+      agentId: 'showrunner',
+      venture: 'trades-show',
+      outputType: 'pipeline_check',
+      runId: run.id,
+      draftContent: reportPayload,
+      tags: ['daily', todayIso],
+    });
+
     const queueId = await depositToQueue({
       agent_name: AGENT_NAME,
       type: 'report',
       title: `Showrunner — Daily Pipeline Check (${todayIso})`,
       summary: `${items.length} content item${items.length === 1 ? '' : 's'} need${items.length === 1 ? 's' : ''} attention this week`,
-      full_output: {
-        date: todayIso,
-        week_range: `${start} to ${end}`,
-        items,
-      },
+      full_output: reportPayload,
       run_id: run.id,
+      agent_output_id: outputId,
     });
+
+    await setApprovalQueueId(outputId, queueId);
 
     await logRunComplete({
       runId: run.id,
