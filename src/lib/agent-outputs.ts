@@ -252,6 +252,53 @@ export async function getRecentAgentOutputs(
 }
 
 // ────────────────────────────────────────────────────────────
+// getApprovedOutputsByType — retrieval of "what good looks like" for an agent.
+// Used as in-context exemplars before drafting a new output of the same type.
+//
+// Ordering: approved_at desc. The Showrunner v2 spec proposes ordering by
+// metrics_30d->>'saves' once Phase 6 populates metrics; until then, recency
+// is the best signal we have.
+// ────────────────────────────────────────────────────────────
+
+export interface ApprovedOutputExample {
+  id: string;
+  output_type: string;
+  tags: string[];
+  final_content: Record<string, unknown> | null;
+  approved_at: string | null;
+}
+
+export async function getApprovedOutputsByType(params: {
+  agentId: AgentId;
+  venture: Venture;
+  outputType: string;
+  limit?: number;
+  requireFinalContent?: boolean;
+}): Promise<ApprovedOutputExample[]> {
+  const q = supabaseAdmin()
+    .from('agent_outputs')
+    .select('id, output_type, tags, final_content, approved_at')
+    .eq('agent_id', params.agentId)
+    .eq('venture', params.venture)
+    .eq('output_type', params.outputType)
+    .in('approval_status', ['approved', 'edited'])
+    .order('approved_at', { ascending: false, nullsFirst: false })
+    .limit(params.limit ?? 5);
+
+  const { data, error } = await q;
+  if (error) {
+    console.error('[agent-outputs] getApprovedOutputsByType failed:', error);
+    throw error;
+  }
+
+  const rows = (data ?? []) as ApprovedOutputExample[];
+  if (params.requireFinalContent) {
+    return rows.filter((r) => r.final_content != null);
+  }
+  return rows;
+}
+
+// ────────────────────────────────────────────────────────────
 // logLearning — Phase 4 Supervisor/System Engineer retrospectives.
 // Exposed now; unused in Step 1.
 // ────────────────────────────────────────────────────────────
