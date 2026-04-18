@@ -30,7 +30,7 @@ export function QueueCard({ item }: QueueCardProps) {
   const hasExpandable = !!(briefing || showrunner || weeklyPlan);
   const isApprovedPlan = weeklyPlan && item.status === 'approved';
 
-  const act = (status: 'approved' | 'rejected' | 'deferred') => {
+  const act = (status: 'approved' | 'rejected') => {
     setError(null);
     startTransition(async () => {
       try {
@@ -237,14 +237,6 @@ export function QueueCard({ item }: QueueCardProps) {
           style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
         >
           Reject
-        </button>
-        <button
-          onClick={() => act('deferred')}
-          disabled={isPending}
-          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[80px]"
-          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-        >
-          Defer
         </button>
         <input
           type="text"
