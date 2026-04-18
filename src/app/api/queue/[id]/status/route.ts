@@ -6,8 +6,8 @@ import {
 } from '@/lib/agent-outputs';
 import { executeShowrunnerDraft } from '@/lib/agents/showrunner';
 import {
-  getAgentMemory,
-  setAgentMemory,
+  getPermanentPreferences,
+  setPermanentPreferences,
   supabaseAdmin,
   updateQueueStatus,
   type QueueStatus,
@@ -74,15 +74,24 @@ export async function POST(
       }
     }
 
-    // Persist feedback as a permanent behavioral rule in agent memory
+    // Persist feedback as a permanent behavioral rule in agent memory.
+    // Note: Agent Supervisor (Phase 4) will eventually own the 3+ occurrence
+    // promotion logic per playbook §7. Until then, queue feedback promotes
+    // immediately — preserves existing behavior but uses the canonical
+    // permanent_preferences key instead of the legacy feedback_rules.
     if (feedback && (status === 'approved' || status === 'rejected')) {
       try {
         const agentName = item.agent_name ?? 'ops_chief';
-        const existing = (await getAgentMemory(agentName, 'feedback_rules')) as string[] | null;
-        const rules = existing ?? [];
+        const existing = await getPermanentPreferences(agentName);
         const prefix = status === 'approved' ? 'APPROVED' : 'REJECTED';
-        rules.push(`[${prefix} ${todayIsoPT()}] ${feedback}`);
-        await setAgentMemory(agentName, 'feedback_rules', rules);
+        const newRule = `[${prefix} ${todayIsoPT()}] ${feedback}`;
+        const existingBodies = new Set(
+          existing.map((r) => r.replace(/^\[[^\]]+\]\s*/, '').trim()),
+        );
+        const newBody = newRule.replace(/^\[[^\]]+\]\s*/, '').trim();
+        if (!existingBodies.has(newBody)) {
+          await setPermanentPreferences(agentName, [...existing, newRule]);
+        }
       } catch (memErr) {
         console.error('Failed to persist feedback to agent memory:', memErr);
       }

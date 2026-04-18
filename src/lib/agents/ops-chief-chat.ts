@@ -18,7 +18,6 @@ import {
   type Task,
 } from '../notion/client';
 import {
-  getAgentMemory,
   getChatHistory,
   logRunComplete,
   logRunStart,
@@ -26,7 +25,7 @@ import {
 } from '../supabase/client';
 import { todayIsoPT } from '../time';
 import { loadContextFile } from './base';
-import { renderMemoryBlock } from './ops-chief';
+import { loadOpsChiefMemory, renderMemoryBlock } from './ops-chief';
 
 const MODEL = process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-5';
 const anthropic = new Anthropic({ apiKey: env.anthropic.apiKey });
@@ -473,7 +472,9 @@ function buildChatSystemPrompt(ctx: ToolContext, todayIso: string): string {
     '\n\n---\n\n' +
     loadContextFile('operations/venture-days.md') +
     '\n\n---\n\n' +
-    loadContextFile('agents/ops-chief.md');
+    loadContextFile('agents/ops-chief/system-prompt.md') +
+    '\n\n---\n\n' +
+    loadContextFile('agents/ops-chief/playbook.md');
 
   const available = ctx.initiatives.map((i) => `- ${i.name}`).join('\n');
 
@@ -566,7 +567,7 @@ export async function runOpsChiefChat(userMessage: string): Promise<ChatResult> 
 
     await saveChatMessage({ role: 'user', content: userMessage });
 
-    const memory = await getAgentMemory(AGENT_NAME);
+    const memory = await loadOpsChiefMemory();
     const systemPrompt = buildChatSystemPrompt(toolCtx, todayIso) + renderMemoryBlock(memory);
     const actions: ChatAction[] = [];
     let tokensIn = 0;

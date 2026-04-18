@@ -11,14 +11,16 @@ import {
   type Task,
 } from '../notion/client';
 import {
-  getAgentMemory,
   getRecentAgentRuns,
   getRecentFeedback,
   type RecentFeedbackItem,
 } from '../supabase/client';
 import { addDaysIso, todayIsoPT, weekdayPT } from '../time';
 import { loadContextFile, runAgent, type RunAgentResult } from './base';
-import { renderMemoryBlock } from './ops-chief';
+import { loadOpsChiefMemory, renderMemoryBlock } from './ops-chief';
+
+// Playbook §9: weekly planner uses the same 14-day task feedback window.
+const RECENT_FEEDBACK_DAYS = 14;
 
 const AGENT_NAME = 'ops_chief';
 
@@ -199,7 +201,16 @@ export async function runWeeklyPlanner(
           safe('activeOutcomes', () => getActiveOutcomes(), [] as Outcome[], errors),
           safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
           safe('recentAgentRuns', () => getRecentAgentRuns(30), [] as any[], errors),
-          safe('recentFeedback', () => getRecentFeedback(AGENT_NAME, 24 * 7), [] as RecentFeedbackItem[], errors),
+          safe(
+            'recentFeedback',
+            () =>
+              getRecentFeedback(AGENT_NAME, 24 * RECENT_FEEDBACK_DAYS, [
+                'recommendation',
+                'briefing',
+              ]),
+            [] as RecentFeedbackItem[],
+            errors,
+          ),
         ]);
       return {
         weekStartIso,
@@ -220,7 +231,7 @@ export async function runWeeklyPlanner(
       `week=${ctx.weekStartIso}→${ctx.weekEndIso} tasks=${ctx.weekTasks.length} overdue=${ctx.overdueTasks.length} priorities=${ctx.monthlyPriorities.length} outcomes=${ctx.activeOutcomes.length} feedback=${ctx.recentFeedback.length} agent_runs=${ctx.recentAgentRuns.length}`,
 
     buildPrompt: async (ctx) => {
-      const memory = await getAgentMemory(AGENT_NAME);
+      const memory = await loadOpsChiefMemory();
       const memoryBlock = renderMemoryBlock(memory);
 
       const system =
@@ -228,7 +239,9 @@ export async function runWeeklyPlanner(
         '\n\n---\n\n' +
         loadContextFile('operations/venture-days.md') +
         '\n\n---\n\n' +
-        loadContextFile('agents/ops-chief.md') +
+        loadContextFile('agents/ops-chief/system-prompt.md') +
+        '\n\n---\n\n' +
+        loadContextFile('agents/ops-chief/playbook.md') +
         '\n\n---\n\n' +
         loadContextFile('operations/weekly-planner.md') +
         memoryBlock;
@@ -264,7 +277,7 @@ export async function runWeeklyPlanner(
               return `- [${f.status.toUpperCase()} ${date}] ${f.type}: "${f.title}"${fb}`;
             })
             .join('\n')
-        : '(no recent corrections)';
+        : '(no recent corrections in the last 14 days)';
 
       const outcomesBlock = ctx.activeOutcomes.length
         ? ctx.activeOutcomes
@@ -302,8 +315,9 @@ ${ctx.initiatives.map((i) => `- ${i.name} [${i.status ?? 'no status'}]`).join('\
 Cross-agent signal — what other agents did that should shape this week's plan.
 ${agentActivityBlock}
 
-# RECENT FEEDBACK (last 7 days)
-Briana's corrections and rejections. Don't repeat the same choices she just corrected.
+# RECENT FEEDBACK (last 14 days)
+Briana's corrections and rejections on briefings and weekly plans. Apply to this run;
+don't repeat the same choices she just corrected.
 ${feedbackBlock}
 
 Produce the weekly plan following the format in your system prompt. Be concrete about which tasks go on which day and why. Include RESCHEDULE and NEW TASKS sections.`;
