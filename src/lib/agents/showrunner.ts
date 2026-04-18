@@ -1,7 +1,11 @@
-import { logOutput } from '../agent-outputs';
+import {
+  getApprovedOutputsByType,
+  logOutput,
+  type ApprovedOutputExample,
+} from '../agent-outputs';
 import { createContentEntry } from '../notion/client';
 import {
-  getAgentMemory,
+  getPermanentPreferences,
   getRecentFeedback,
   type RecentFeedbackItem,
 } from '../supabase/client';
@@ -32,6 +36,11 @@ export interface ShowrunnerContext {
   guestLinks: string;
   timestampedOutline: string;
   recentFeedback: RecentFeedbackItem[];
+  exemplars: {
+    substackPost: ApprovedOutputExample[];
+    episodeMetadata: ApprovedOutputExample[];
+    socialCaption: ApprovedOutputExample[];
+  };
 }
 
 export interface ClipCaption {
@@ -153,6 +162,26 @@ function renderClipsForPrompt(clips: ClipInput[]): string {
     .join('\n\n');
 }
 
+// Renders past approved/edited outputs of the same type as reference
+// exemplars. The system prompt explicitly tells the model to treat these
+// as "what good looks like" context, not as templates to copy.
+function renderExemplarsBlock(
+  label: string,
+  examples: ApprovedOutputExample[],
+  maxPerExample = 600,
+): string {
+  if (!examples.length) return '';
+  const blocks = examples.map((ex, i) => {
+    const tags = ex.tags?.length ? ` [tags: ${ex.tags.join(', ')}]` : '';
+    const content = ex.final_content
+      ? JSON.stringify(ex.final_content, null, 2).slice(0, maxPerExample)
+      : '(no final_content)';
+    const when = ex.approved_at ? ex.approved_at.slice(0, 10) : 'unknown';
+    return `## Example ${i + 1} — approved ${when}${tags}\n${content}`;
+  });
+  return `\n\n---\n\n# Past approved ${label} — reference only, do NOT copy\nUse these to understand what "good" looks like for this output type. Write fresh work in the same voice and shape; don't recycle phrases.\n\n${blocks.join('\n\n')}`;
+}
+
 function renderFeedbackForPrompt(items: RecentFeedbackItem[]): string {
   if (!items.length) return '';
   const body = items
@@ -162,7 +191,7 @@ function renderFeedbackForPrompt(items: RecentFeedbackItem[]): string {
       return `- [${f.status.toUpperCase()} ${date}] "${f.title}"${fb}`;
     })
     .join('\n');
-  return `\n\n# RECENT FEEDBACK (last 7 days)\nBriana's corrections on past Showrunner output. Don't repeat the same choices.\n${body}`;
+  return `\n\n# RECENT FEEDBACK (last 14 days)\nBriana's corrections on past Showrunner drafts. Apply to this run; don't repeat the same choices.\n${body}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +221,34 @@ export async function runShowrunner(
     maxTokens: 8000,
 
     gatherContext: async () => {
-      const recentFeedback = await getRecentFeedback(AGENT_NAME, 24 * 7).catch(() => []);
+      // Playbook: 14-day feedback window for scheduled/cadenced runs. Showrunner
+      // runs are on-demand per transcript, but 14d keeps us aligned with Ops
+      // Chief and gives enough signal.
+      const [recentFeedback, substackPost, episodeMetadata, socialCaption] =
+        await Promise.all([
+          getRecentFeedback(AGENT_NAME, 24 * 14, ['draft']).catch(() => []),
+          getApprovedOutputsByType({
+            agentId: 'showrunner',
+            venture: 'trades-show',
+            outputType: 'substack_post',
+            limit: 5,
+            requireFinalContent: true,
+          }).catch(() => []),
+          getApprovedOutputsByType({
+            agentId: 'showrunner',
+            venture: 'trades-show',
+            outputType: 'episode_metadata',
+            limit: 5,
+            requireFinalContent: true,
+          }).catch(() => []),
+          getApprovedOutputsByType({
+            agentId: 'showrunner',
+            venture: 'trades-show',
+            outputType: 'social_caption',
+            limit: 5,
+            requireFinalContent: true,
+          }).catch(() => []),
+        ]);
       return {
         transcript: params.transcript,
         episodeType: params.episodeType,
@@ -202,23 +258,48 @@ export async function runShowrunner(
         guestLinks,
         timestampedOutline,
         recentFeedback,
+        exemplars: {
+          substackPost,
+          episodeMetadata,
+          socialCaption,
+        },
       };
     },
 
     summarizeContext: (ctx) =>
-      `type=${ctx.episodeType} words=${ctx.transcriptWordCount} clips=${ctx.clips.length} guest=${ctx.guestName ? 'y' : 'n'} outline=${ctx.timestampedOutline ? 'provided' : 'generate'} feedback=${ctx.recentFeedback.length}`,
+      `type=${ctx.episodeType} words=${ctx.transcriptWordCount} clips=${ctx.clips.length} guest=${ctx.guestName ? 'y' : 'n'} outline=${ctx.timestampedOutline ? 'provided' : 'generate'} feedback=${ctx.recentFeedback.length} exemplars=sp${ctx.exemplars.substackPost.length}/em${ctx.exemplars.episodeMetadata.length}/sc${ctx.exemplars.socialCaption.length}`,
 
     buildPrompt: async (ctx) => {
-      const memory = await getAgentMemory(AGENT_NAME);
+      const permanentPreferences = await getPermanentPreferences(AGENT_NAME);
       let memoryBlock = '';
-      if (Array.isArray(memory.feedback_rules) && memory.feedback_rules.length) {
+      if (permanentPreferences.length) {
         memoryBlock =
-          '\n\n---\n\n# Persistent Rules (from past feedback)\nFollow these rules — direct instructions from Briana.\n' +
-          memory.feedback_rules.map((r: string) => `- ${r}`).join('\n');
+          '\n\n---\n\n# Permanent Preferences (from past feedback)\nFollow these rules — direct instructions from Briana.\n' +
+          permanentPreferences.map((r) => `- ${r}`).join('\n');
       }
 
       const clipsBlock = renderClipsForPrompt(ctx.clips);
       const feedbackBlock = renderFeedbackForPrompt(ctx.recentFeedback);
+
+      // Conditional sub-voice file loading per system-prompt v2. The current
+      // runShowrunner is a one-shot that produces all output types — so every
+      // voice file that exists and is relevant gets loaded. Substack voice file
+      // is not yet written; loadContextFile returns '' for missing files.
+      const substackVoice = loadContextFile('agents/showrunner/substack-voice.md');
+      const socialCaptionsVoice = ctx.clips.length
+        ? loadContextFile('agents/showrunner/social-captions-voice.md')
+        : '';
+      const episodeMetadataVoice = loadContextFile(
+        'agents/showrunner/episode-metadata-voice.md',
+      );
+      const voiceSection = [substackVoice, socialCaptionsVoice, episodeMetadataVoice]
+        .filter(Boolean)
+        .join('\n\n---\n\n');
+
+      const exemplarsBlock =
+        renderExemplarsBlock('Substack posts', ctx.exemplars.substackPost, 900) +
+        renderExemplarsBlock('episode metadata', ctx.exemplars.episodeMetadata, 600) +
+        renderExemplarsBlock('social captions', ctx.exemplars.socialCaption, 300);
 
       const clipInstructions = ctx.clips.length
         ? `Write one caption per clip listed below. Each clip gets its own \`### CLIP N CAPTION\` section where N is the clip number. End each caption with a single line of hashtags.`
@@ -231,7 +312,9 @@ export async function runShowrunner(
         '\n\n---\n\n' +
         loadContextFile('workflows/trades-show-pipeline.md') +
         '\n\n---\n\n' +
-        loadContextFile('agents/showrunner.md') +
+        loadContextFile('agents/showrunner/system-prompt.md') +
+        (voiceSection ? '\n\n---\n\n' + voiceSection : '') +
+        exemplarsBlock +
         '\n\n---\n\n' +
         `# Output structure (REQUIRED — parser depends on exact headers)
 
