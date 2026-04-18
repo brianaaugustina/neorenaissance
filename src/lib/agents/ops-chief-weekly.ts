@@ -327,6 +327,11 @@ Produce the weekly plan following the format in your system prompt. Be concrete 
         },
       };
     },
+    output: {
+      venture: 'cross',
+      outputType: 'weekly_plan',
+      tags: (ctx) => ['weekly', ctx.weekStartIso],
+    },
   });
 
   return {

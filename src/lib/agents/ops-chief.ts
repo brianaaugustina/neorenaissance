@@ -506,6 +506,11 @@ export async function runOpsChiefDailyBriefing(
         },
       },
     }),
+    output: {
+      venture: 'cross',
+      outputType: 'daily_briefing',
+      tags: (ctx) => ['daily', ctx.todayIso],
+    },
   });
 
   // Piggyback: summarize yesterday's chat into memory for future context
