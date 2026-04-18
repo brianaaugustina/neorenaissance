@@ -37,8 +37,8 @@ longer flowing ones. Parenthetical thoughts for authenticity.
 ### Interview Episode
 
 An interview episode features a guest — a craftsperson, maker, artisan, or
-trade professional. The Substack post is a **lightly edited full transcript**
-with editorial framing.
+trade professional. The Substack post is an **exact transcript** organized
+by topic, with editorial framing at the top and close.
 
 **Target length:** Full transcript (4,000-10,000+ words depending on episode)
 
@@ -46,15 +46,60 @@ with editorial framing.
 1. **Introduction** (1-2 paragraphs): Guest name, their craft, where they
    work, and a thematic preview of the conversation. Mention what makes this
    guest's story compelling.
-2. **Episode embed links**: Links to YouTube, Spotify, Apple Podcasts.
-3. **Full transcript**: Speaker names in **bold**, followed by their remarks.
-   Each speaker turn is a separate paragraph block. Lightly clean up verbal
-   tics ("um", "like") but preserve natural speech rhythm and personality.
-   Keep the guest's colloquialisms and storytelling style intact.
-4. **Closing + CTAs** (1 paragraph): Brief host reflection, subscribe
+2. **Topic-broken transcript**: The body of the post is the transcript
+   divided into sections by topic. Each section starts with a topic header
+   (H2, `##`), then the speaker dialogue in order.
+3. **Closing + CTAs** (1 paragraph): Brief host reflection, subscribe
    prompt, share prompt, contact info.
 
-**Voice for intro:** Warm, curious, setting the stage. Not a press release.
+**Transcript rules — critical:**
+
+- Reproduce the transcript **exactly** as spoken. Do NOT clean up verbal
+  tics ("um", "like", "you know"), false starts, filler words, or
+  conversational fragments. Preserve every "um" and "yeah." The value of an
+  interview post is that it reads like the conversation sounded.
+- Each speaker turn is a separate paragraph.
+- Format each turn as: **bold speaker name/identifier:** followed by their
+  words in quotes.
+- **First mention of each speaker** in the transcript uses the full name:
+  - Host: `**Briana Ottoboni:** "..."`
+  - Guest: `**{Guest Full Name}:** "..."` (e.g. `**Stuart Brioza:** "..."`)
+- **Every subsequent mention** uses short form:
+  - Host: `**Briana:** "..."`
+  - Guest: `**{initials}:** "..."` — first letter of each word in the name
+    (e.g. `**SB:** "..."` for Stuart Brioza, `**SL:** "..."` for Sarah Larson)
+  - If the guest has only one name, keep using that name instead of initials.
+
+**Topic headers:**
+
+- Break the transcript into 5-10 topic sections that mirror the arc of the
+  conversation. Each section gets a concise H2 header (`##`).
+- If the user provided a timestamped outline, **reuse those chapter titles
+  verbatim** as the H2 headers (stripping the timestamps). The order of
+  headers must follow the outline.
+- If no outline was provided, infer natural topic breaks from the transcript.
+- Do NOT include timestamps in the post draft — timestamps only live in the
+  YouTube description's "In this episode" block.
+
+**Voice for intro and closing:** Warm, curious, setting the stage. Not a
+press release. The intro may paraphrase or preview, but the transcript body
+stays verbatim.
+
+**Example of interview body formatting:**
+
+```
+## The Origin Story of Often Wander
+
+**Briana Ottoboni:** "So, um, tell me how Often Wander started."
+
+**Sarah Larson:** "Yeah, so it was, you know, kind of a manifestation thing,
+honestly. I was working at a retail store and..."
+
+**Briana:** "Wait, like, literally a vision board moment?"
+
+**SL:** "Exactly. Um, I had put it on the board and then a few months later
+the opportunity just, like, showed up."
+```
 
 ---
 

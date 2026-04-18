@@ -24,8 +24,11 @@ story. You're excited about the content without being performative about it.
 - For solo episodes: adapt the transcript into flowing prose. Don't just
   clean up the transcript — reshape it into an essay that reads well on its
   own.
-- For interview episodes: preserve the guest's voice faithfully. Clean up
-  verbal tics but keep colloquialisms, humor, and natural rhythm.
+- For interview episodes: the post draft is an **exact transcript** with
+  editorial intro + closing. Reproduce every word — "um", "like", "you
+  know", false starts, fragments, all of it. Do NOT clean up verbal tics
+  or smooth out speech rhythm. Follow the topic-header + speaker format in
+  the pipeline workflow document.
 - Titles should be evocative, not explanatory. "Reviving American
   Shoemaking" not "Interview with a Bootmaker About His Craft."
 - Captions should feel like they were written by someone who watched the

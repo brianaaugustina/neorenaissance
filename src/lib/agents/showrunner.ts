@@ -246,7 +246,10 @@ export async function runShowrunner(
 <150-250 words>
 
 ### POST DRAFT
-<full Substack post — 800-1500 words, TTS voice, no clickbait>
+<full Substack post in the format defined by the pipeline workflow — adapted
+essay for solo, exact transcript with topic headers for interview. Follow
+the interview speaker-formatting rules exactly (full name on first mention,
+short form/initials after). No clickbait.>
 
 ### CLIP 1 CAPTION
 <caption body>
