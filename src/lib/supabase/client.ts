@@ -108,25 +108,105 @@ export interface RecentFeedbackItem {
 // Pulls items Briana rejected, deferred, or edited (i.e. left feedback on)
 // within the window. Drives the short-term feedback loop so every agent run
 // sees what Briana corrected recently and can avoid repeating the same choice.
+//
+// queueTypes: optional filter. Ops Chief calls this with the specific types
+// relevant to the current run (e.g. ['briefing'] for daily, ['recommendation']
+// for weekly) so it only learns from matching feedback. Omitted = all types.
 export async function getRecentFeedback(
   agentName: string,
   hoursAgo: number,
+  queueTypes?: QueueType[],
 ): Promise<RecentFeedbackItem[]> {
   const cutoff = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
-  const { data, error } = await supabaseAdmin()
+  const q = supabaseAdmin()
     .from('approval_queue')
     .select('id, type, title, summary, status, feedback, created_at, reviewed_at')
     .eq('agent_name', agentName)
     .in('status', ['rejected', 'deferred', 'approved'])
     .or(`reviewed_at.gte.${cutoff},created_at.gte.${cutoff}`)
     .order('reviewed_at', { ascending: false, nullsFirst: false })
-    .limit(25);
+    .limit(50);
+  if (queueTypes && queueTypes.length) q.in('type', queueTypes);
+  const { data, error } = await q;
   if (error) throw error;
   // Only keep items with feedback text OR a non-approved status — approved
   // items without feedback teach nothing.
   return (data ?? []).filter(
     (r: any) => r.feedback || r.status !== 'approved',
   ) as RecentFeedbackItem[];
+}
+
+// ============================================================
+// Permanent preferences — long-term behavioral rules
+// Stored as agent_memory with key='permanent_preferences' (array of strings).
+// Back-compat reads from legacy key 'feedback_rules' and merges.
+// ============================================================
+export async function getPermanentPreferences(
+  agentName: string,
+): Promise<string[]> {
+  const [permanent, legacy] = await Promise.all([
+    getAgentMemory(agentName, 'permanent_preferences') as Promise<string[] | null>,
+    getAgentMemory(agentName, 'feedback_rules') as Promise<string[] | null>,
+  ]);
+  const out: string[] = [];
+  if (Array.isArray(permanent)) out.push(...permanent);
+  if (Array.isArray(legacy)) {
+    // Dedupe against bracket-tagged rules already migrated.
+    const existingBodies = new Set(
+      out.map((r) => r.replace(/^\[[^\]]+\]\s*/, '').trim()),
+    );
+    for (const r of legacy) {
+      const body = r.replace(/^\[[^\]]+\]\s*/, '').trim();
+      if (!existingBodies.has(body)) out.push(r);
+    }
+  }
+  return out;
+}
+
+export async function setPermanentPreferences(
+  agentName: string,
+  rules: string[],
+): Promise<void> {
+  await setAgentMemory(agentName, 'permanent_preferences', rules);
+}
+
+// ============================================================
+// Daily chat summaries — one row per date under key 'daily_chat_summary:YYYY-MM-DD'.
+// Each value holds the structured distillation for that day.
+// ============================================================
+export interface DailyChatSummary {
+  date: string; // YYYY-MM-DD
+  value: Record<string, unknown>;
+}
+
+export async function saveDailyChatSummary(
+  agentName: string,
+  date: string,
+  value: Record<string, unknown>,
+): Promise<void> {
+  await setAgentMemory(
+    agentName,
+    `daily_chat_summary:${date}`,
+    { ...value, date },
+  );
+}
+
+export async function getDailyChatSummaries(
+  agentName: string,
+  lastNDays: number,
+): Promise<DailyChatSummary[]> {
+  const { data, error } = await supabaseAdmin()
+    .from('agent_memory')
+    .select('key, value')
+    .eq('agent_name', agentName)
+    .like('key', 'daily_chat_summary:%')
+    .order('key', { ascending: false })
+    .limit(lastNDays);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    date: String(r.key).replace('daily_chat_summary:', ''),
+    value: (r.value ?? {}) as Record<string, unknown>,
+  }));
 }
 
 // ============================================================

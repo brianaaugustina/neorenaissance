@@ -199,6 +199,59 @@ export async function setApprovalQueueId(
 }
 
 // ────────────────────────────────────────────────────────────
+// getRecentAgentOutputs — cross-agent visibility for Ops Chief briefings.
+// Returns parent outputs (parent_output_id is null) so the briefing surfaces
+// one line per coherent agent action rather than a row per caption.
+// ────────────────────────────────────────────────────────────
+
+export interface RecentAgentOutput {
+  id: string;
+  agent_id: string;
+  venture: string;
+  output_type: string;
+  approval_status: ApprovalStatus;
+  tags: string[];
+  created_at: string;
+  draft_title?: string;
+}
+
+export async function getRecentAgentOutputs(
+  hoursAgo: number,
+  opts: { excludeAgentIds?: string[]; limit?: number } = {},
+): Promise<RecentAgentOutput[]> {
+  const cutoff = new Date(Date.now() - hoursAgo * 3600 * 1000).toISOString();
+  const q = supabaseAdmin()
+    .from('agent_outputs')
+    .select(
+      'id, agent_id, venture, output_type, approval_status, tags, created_at, draft_content',
+    )
+    .gte('created_at', cutoff)
+    .is('parent_output_id', null)
+    .order('created_at', { ascending: false })
+    .limit(opts.limit ?? 25);
+  if (opts.excludeAgentIds?.length) {
+    q.not('agent_id', 'in', `(${opts.excludeAgentIds.map((a) => `"${a}"`).join(',')})`);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    agent_id: r.agent_id,
+    venture: r.venture,
+    output_type: r.output_type,
+    approval_status: r.approval_status,
+    tags: r.tags ?? [],
+    created_at: r.created_at,
+    draft_title:
+      typeof r.draft_content === 'object' && r.draft_content
+        ? (r.draft_content.title ??
+          r.draft_content.episode_title ??
+          r.draft_content.summary)
+        : undefined,
+  }));
+}
+
+// ────────────────────────────────────────────────────────────
 // logLearning — Phase 4 Supervisor/System Engineer retrospectives.
 // Exposed now; unused in Step 1.
 // ────────────────────────────────────────────────────────────
