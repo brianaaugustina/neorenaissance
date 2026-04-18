@@ -1,3 +1,4 @@
+import { logOutput } from '../agent-outputs';
 import { createContentEntry } from '../notion/client';
 import {
   getAgentMemory,
@@ -326,6 +327,59 @@ ${clipInstructions}` +
         },
         initiative: 'The Trades Show',
       };
+    },
+    output: {
+      venture: 'trades-show',
+      // Parent row = the substack_post — the primary writing artifact.
+      // episode_metadata + per-caption rows log as children below.
+      outputType: 'substack_post',
+      tags: (ctx) =>
+        ['episode', ctx.episodeType, ctx.guestName].filter(Boolean) as string[],
+      children: async ({ ctx, runId, parentOutputId }) => {
+        // Parsed is set by buildDeposit immediately before; safe to reference.
+        if (!parsed) return;
+
+        // 1 episode_metadata row
+        await logOutput({
+          agentId: 'showrunner',
+          venture: 'trades-show',
+          outputType: 'episode_metadata',
+          parentOutputId,
+          runId,
+          draftContent: {
+            episode_title: parsed.episodeTitle,
+            substack_subtitle: parsed.substackSubtitle,
+            youtube_description: parsed.youtubeDescription,
+            spotify_description: parsed.spotifyDescription,
+          },
+          tags: ['episode_metadata', ctx.episodeType],
+        });
+
+        // One social_caption row per clip. Supervisor needs per-caption
+        // granularity to cluster which specific captions Briana edits or
+        // rejects.
+        for (const clip of parsed.clipCaptions) {
+          await logOutput({
+            agentId: 'showrunner',
+            venture: 'trades-show',
+            outputType: 'social_caption',
+            parentOutputId,
+            runId,
+            draftContent: {
+              clip_index: clip.index,
+              clip_description: clip.description,
+              caption: clip.caption,
+              hashtags: clip.hashtags,
+              platforms: clip.platforms,
+            },
+            tags: [
+              'social_caption',
+              `clip_${clip.index}`,
+              ...(clip.platforms ?? []),
+            ],
+          });
+        }
+      },
     },
   });
 
