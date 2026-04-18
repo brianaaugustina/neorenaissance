@@ -1,4 +1,9 @@
 import { NextResponse } from 'next/server';
+import {
+  bulkUpdateOutputsByRunId,
+  logOutput,
+  updateOutputStatus,
+} from '@/lib/agent-outputs';
 import { executeShowrunnerDraft } from '@/lib/agents/showrunner';
 import {
   getAgentMemory,
@@ -42,6 +47,33 @@ export async function POST(
 
     await updateQueueStatus(id, status, feedback);
 
+    // Sync agent_outputs. Parent row is updated directly; any children from
+    // the same run get bulk-approved/rejected under the same package-level
+    // decision. Per-item approval UI lands with Step 7.
+    if (
+      (status === 'approved' || status === 'rejected') &&
+      item.agent_output_id
+    ) {
+      try {
+        await updateOutputStatus({
+          outputId: item.agent_output_id,
+          status,
+          finalContent:
+            status === 'approved' ? (item.full_output ?? {}) : undefined,
+          rejectionReason: status === 'rejected' ? feedback : undefined,
+        });
+        if (item.run_id) {
+          await bulkUpdateOutputsByRunId(
+            item.run_id,
+            status,
+            status === 'rejected' ? feedback : undefined,
+          );
+        }
+      } catch (outputErr) {
+        console.error('Failed to sync agent_outputs:', outputErr);
+      }
+    }
+
     // Persist feedback as a permanent behavioral rule in agent memory
     if (feedback && (status === 'approved' || status === 'rejected')) {
       try {
@@ -82,6 +114,65 @@ export async function POST(
             },
           })
           .eq('id', id);
+
+        // Log one calendar_entry agent_output per Notion row created. These
+        // are already approved by virtue of the package being approved.
+        if (item.agent_output_id) {
+          try {
+            if (exec.newsletterId) {
+              const calOutId = await logOutput({
+                agentId: 'showrunner',
+                venture: 'trades-show',
+                outputType: 'calendar_entry',
+                parentOutputId: item.agent_output_id,
+                runId: item.run_id ?? undefined,
+                draftContent: {
+                  notion_id: exec.newsletterId,
+                  kind: 'newsletter',
+                  episode_title: item.full_output?.episode_title,
+                  publish_date: item.full_output?.suggested_post_date,
+                },
+                tags: ['calendar_entry', 'newsletter'],
+              });
+              await updateOutputStatus({
+                outputId: calOutId,
+                status: 'approved',
+                finalContent: {
+                  notion_id: exec.newsletterId,
+                  kind: 'newsletter',
+                },
+              });
+            }
+            for (const clip of exec.clipIds) {
+              const calOutId = await logOutput({
+                agentId: 'showrunner',
+                venture: 'trades-show',
+                outputType: 'calendar_entry',
+                parentOutputId: item.agent_output_id,
+                runId: item.run_id ?? undefined,
+                draftContent: {
+                  notion_id: clip.contentEntryId,
+                  kind: 'clip',
+                  clip_index: clip.index,
+                  episode_title: item.full_output?.episode_title,
+                },
+                tags: ['calendar_entry', 'clip', `clip_${clip.index}`],
+              });
+              await updateOutputStatus({
+                outputId: calOutId,
+                status: 'approved',
+                finalContent: {
+                  notion_id: clip.contentEntryId,
+                  kind: 'clip',
+                  clip_index: clip.index,
+                },
+              });
+            }
+          } catch (logErr) {
+            console.error('Failed to log calendar_entry outputs:', logErr);
+          }
+        }
+
         executeResult = {
           newsletterCreated: !!exec.newsletterId,
           clipsCreated: exec.clipIds.length,
