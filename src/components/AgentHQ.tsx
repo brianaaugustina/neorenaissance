@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { AgentUpdates } from './AgentUpdates';
 import { QueueCard } from './QueueCard';
 import { ShowrunnerInput } from './ShowrunnerInput';
@@ -25,9 +26,17 @@ export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
 
       {/* ---- Agent Updates ---- */}
       <div>
-        <h3 className="serif text-sm uppercase tracking-widest muted mb-3">
-          Agent Updates
-        </h3>
+        <div className="flex items-baseline justify-between mb-3">
+          <h3 className="serif text-sm uppercase tracking-widest muted">
+            Agent Updates <span className="muted" style={{ opacity: 0.6 }}>· past 24h</span>
+          </h3>
+          <Link
+            href="/agent-updates"
+            className="text-xs gold hover:underline"
+          >
+            View all →
+          </Link>
+        </div>
         <AgentUpdates runs={agentRuns} />
       </div>
 

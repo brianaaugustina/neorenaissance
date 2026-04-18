@@ -91,8 +91,15 @@ export async function loadDashboardData(): Promise<DashboardData> {
       errors,
     ),
     safe('chatHistory', () => getChatHistory(todayIso, 50), [] as any[], errors),
-    safe('agentRuns', () => getRecentAgentRuns(20), [] as any[], errors),
+    safe('agentRuns', () => getRecentAgentRuns(50), [] as any[], errors),
   ]);
+
+  // Agent Updates feed shows only the past 24 hours. Older runs live on the
+  // /agent-updates full-history page.
+  const agentActivityCutoff = Date.now() - 24 * 3600 * 1000;
+  const recentAgentRuns = agentRuns.filter(
+    (r: any) => new Date(r.started_at).getTime() >= agentActivityCutoff,
+  );
 
   const chatHistory: ChatMessageView[] = chatRaw.map((m: any) => ({
     id: m.id,
@@ -129,7 +136,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     pendingQueue: [...pendingQueue, ...approvedRecs],
     completedToday,
     chatHistory,
-    agentRuns,
+    agentRuns: recentAgentRuns,
     errors,
   };
 }
