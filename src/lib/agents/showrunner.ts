@@ -292,12 +292,12 @@ ${clipInstructions}` +
     onSuccess: async () => {
       if (!parsed) return;
 
-      // Newsletter entry (only if a post draft was generated)
+      // Newsletter entry (only if a post draft was generated). Status left to
+      // the Content DB default; Briana can finalize once she reviews the draft.
       if (parsed.postDraft) {
         try {
           await createContentEntry({
             name: `${parsed.episodeTitle || 'Episode'} — Newsletter`,
-            status: '✅ Done',
             contentType: ['Newsletter'],
             platforms: ['Trade Secrets Substack'],
             contentPillar: parsed.contentPillars,
@@ -310,12 +310,15 @@ ${clipInstructions}` +
         }
       }
 
-      // One Content entry per clip with the uploaded file attached.
+      // One Content entry per clip. When a fileUploadId is present (future:
+      // once upload infra is wired up via Supabase Storage), attach the video
+      // and mark "Done". Without a file, leave status at the DB default so
+      // Briana can attach the video manually in Notion and advance it.
       for (const clip of parsed.clipCaptions) {
         try {
           const id = await createContentEntry({
             name: `${parsed.episodeTitle || 'Episode'} — Clip ${clip.index}`,
-            status: '✅ Done',
+            status: clip.fileUploadId ? '✅ Done' : undefined,
             contentType: ['Reel'],
             platforms: clip.platforms ?? DEFAULT_SOCIAL_PLATFORMS,
             caption: [clip.caption, clip.hashtags.join(' ')].filter(Boolean).join('\n\n'),

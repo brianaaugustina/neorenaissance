@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 interface ClipRow {
   description: string;
   publishDate: string;
-  file: File | null;
 }
 
 const DEFAULT_PLATFORMS = ['IN@tradesshow', 'TIKTOK@tradesshow', 'LI@brianaottoboni'];
@@ -36,7 +35,7 @@ export function ShowrunnerInput() {
   };
 
   const addClip = () =>
-    setClips((prev) => [...prev, { description: '', publishDate: '', file: null }]);
+    setClips((prev) => [...prev, { description: '', publishDate: '' }]);
 
   const updateClip = (i: number, patch: Partial<ClipRow>) =>
     setClips((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
@@ -54,60 +53,29 @@ export function ShowrunnerInput() {
     startTransition(async () => {
       try {
         const hasClips = clips.some((c) => c.description.trim());
-        const hasFiles = clips.some((c) => c.file);
-
-        let res: Response;
-        if (hasFiles) {
-          // Multipart path — upload clip files alongside metadata.
-          const form = new FormData();
-          form.set('transcript', transcript);
-          form.set('episodeType', episodeType);
-          const clipPayload = clips
-            .filter((c) => c.description.trim())
-            .map((c, i) => {
-              const fileFieldName = c.file ? `clip_file_${i}` : undefined;
-              if (c.file && fileFieldName) form.set(fileFieldName, c.file);
-              return {
-                description: c.description.trim(),
-                publishDate: c.publishDate || undefined,
-                platforms: DEFAULT_PLATFORMS,
-                fileFieldName,
-              };
-            });
-          form.set('clips', JSON.stringify(clipPayload));
-          res = await fetch('/api/agents/showrunner/run', { method: 'POST', body: form });
-        } else {
-          // JSON path — no files, just metadata.
-          res = await fetch('/api/agents/showrunner/run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              transcript,
-              episodeType,
-              clips: hasClips
-                ? clips
-                    .filter((c) => c.description.trim())
-                    .map((c) => ({
-                      description: c.description.trim(),
-                      publishDate: c.publishDate || undefined,
-                      platforms: DEFAULT_PLATFORMS,
-                    }))
-                : [],
-            }),
-          });
-        }
+        const res = await fetch('/api/agents/showrunner/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript,
+            episodeType,
+            clips: hasClips
+              ? clips
+                  .filter((c) => c.description.trim())
+                  .map((c) => ({
+                    description: c.description.trim(),
+                    publishDate: c.publishDate || undefined,
+                    platforms: DEFAULT_PLATFORMS,
+                  }))
+              : [],
+          }),
+        });
 
         const raw = await res.text();
         let data: { error?: string; episodeTitle?: string; captionCount?: number } = {};
         try {
           data = raw ? JSON.parse(raw) : {};
         } catch {
-          // Non-JSON response (usually a platform error page like 413 from Vercel)
-          if (res.status === 413) {
-            throw new Error(
-              'Video file too large for direct upload (Vercel 4.5MB limit). See alternative upload options.',
-            );
-          }
           throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200) || res.statusText}`);
         }
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -190,7 +158,7 @@ export function ShowrunnerInput() {
 
         {clips.length === 0 && (
           <p className="text-xs muted">
-            Add clips to have Showrunner write one social caption per clip and create Notion Content entries with the video attached.
+            Add clips to have Showrunner write one social caption per clip and create Notion Content entries. Attach the video yourself in Notion after the entry is created.
           </p>
         )}
 
@@ -229,19 +197,6 @@ export function ShowrunnerInput() {
                   onChange={(e) => updateClip(i, { publishDate: e.target.value })}
                   className="ml-2 bg-transparent border rounded-md px-2 py-1 text-xs"
                   style={{ borderColor: 'var(--border)' }}
-                  disabled={isPending}
-                />
-              </label>
-              <label
-                className="px-3 py-1.5 text-xs rounded-md border cursor-pointer hover:bg-white/5 transition"
-                style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-              >
-                {clip.file ? clip.file.name : 'Attach video file'}
-                <input
-                  type="file"
-                  accept="video/*"
-                  onChange={(e) => updateClip(i, { file: e.target.files?.[0] ?? null })}
-                  className="hidden"
                   disabled={isPending}
                 />
               </label>
