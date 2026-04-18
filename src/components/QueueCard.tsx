@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface QueueCardProps {
   item: {
@@ -16,7 +17,9 @@ interface QueueCardProps {
 }
 
 export function QueueCard({ item }: QueueCardProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isRetrying, setIsRetrying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [hidden, setHidden] = useState(false);
@@ -32,17 +35,43 @@ export function QueueCard({ item }: QueueCardProps) {
 
   const act = (status: 'approved' | 'rejected') => {
     setError(null);
+    const feedbackText = feedback.trim();
+    const shouldRetry = status === 'rejected' && !!feedbackText;
+
     startTransition(async () => {
       try {
         const res = await fetch(`/api/queue/${item.id}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status, feedback: feedback || undefined }),
+          body: JSON.stringify({ status, feedback: feedbackText || undefined }),
         });
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || `Status update failed (${res.status})`);
+        }
+
+        if (!shouldRetry) {
+          setHidden(true);
+          return;
+        }
+
+        // Reject with feedback → trigger a retry. Keep the card visible with a
+        // "Retrying..." state so Briana sees progress.
+        setIsRetrying(true);
+        const retryRes = await fetch(`/api/queue/${item.id}/retry`, {
+          method: 'POST',
+        });
+        const retryPayload = await retryRes.json().catch(() => ({}));
+        if (!retryRes.ok) {
+          setIsRetrying(false);
+          throw new Error(
+            retryPayload.error || `Retry failed (${retryRes.status}). Original rejection saved.`,
+          );
+        }
         setHidden(true);
-      } catch (e: any) {
-        setError(e.message);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed');
       }
     });
   };
@@ -221,6 +250,12 @@ export function QueueCard({ item }: QueueCardProps) {
         </button>
       )}
 
+      {isRetrying && (
+        <p className="text-xs mb-2" style={{ color: 'var(--gold)' }}>
+          Retrying with your feedback… this usually takes 30-60 seconds.
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 mt-3">
         <button
           onClick={() => act('approved')}
@@ -236,7 +271,7 @@ export function QueueCard({ item }: QueueCardProps) {
           className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[80px]"
           style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
         >
-          Reject
+          {isRetrying ? 'Rejecting…' : feedback.trim() ? 'Reject & Retry' : 'Reject'}
         </button>
         <input
           type="text"

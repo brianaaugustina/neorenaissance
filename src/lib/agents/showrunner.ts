@@ -309,59 +309,121 @@ ${clipInstructions}` +
           content_pillars: parsed.contentPillars,
           suggested_post_date: parsed.suggestedPostDate,
           raw_output: r.text,
+          // Inputs — stored so a reject-with-feedback retry can re-run with
+          // the same transcript/clips/guest info and only the feedback changes.
+          inputs: {
+            transcript: ctx.transcript,
+            episode_type: ctx.episodeType,
+            guest_name: ctx.guestName,
+            guest_links: ctx.guestLinks,
+            timestamped_outline: ctx.timestampedOutline,
+            clips: ctx.clips,
+          },
         },
         initiative: 'The Trades Show',
       };
-    },
-
-    onSuccess: async () => {
-      if (!parsed) return;
-
-      // Newsletter entry (only if a post draft was generated). Status left to
-      // the Content DB default; Briana can finalize once she reviews the draft.
-      if (parsed.postDraft) {
-        try {
-          await createContentEntry({
-            name: `${parsed.episodeTitle || 'Episode'} — Newsletter`,
-            contentType: ['Newsletter'],
-            platforms: ['Trade Secrets Substack'],
-            contentPillar: parsed.contentPillars,
-            publishDate: parsed.suggestedPostDate,
-            ventureIds: [TTS_VENTURE_ID],
-            caption: parsed.substackSubtitle,
-          });
-        } catch (e) {
-          console.error('Newsletter Content DB write failed:', e);
-        }
-      }
-
-      // One Content entry per clip. When a fileUploadId is present (future:
-      // once upload infra is wired up via Supabase Storage), attach the video
-      // and mark "Done". Without a file, leave status at the DB default so
-      // Briana can attach the video manually in Notion and advance it.
-      for (const clip of parsed.clipCaptions) {
-        try {
-          const id = await createContentEntry({
-            name: `${parsed.episodeTitle || 'Episode'} — Clip ${clip.index}`,
-            status: clip.fileUploadId ? '✅ Done' : undefined,
-            contentType: ['Reel'],
-            platforms: clip.platforms ?? DEFAULT_SOCIAL_PLATFORMS,
-            caption: [clip.caption, clip.hashtags.join(' ')].filter(Boolean).join('\n\n'),
-            contentPillar: parsed.contentPillars,
-            publishDate: clip.publishDate,
-            ventureIds: [TTS_VENTURE_ID],
-            fileUploadIds: clip.fileUploadId ? [clip.fileUploadId] : undefined,
-          });
-          clip.contentEntryId = id;
-        } catch (e) {
-          console.error(`Clip ${clip.index} Content DB write failed:`, e);
-        }
-      }
     },
   });
 
   return {
     ...result,
     parsed: parsed ?? parseShowrunnerOutput(result.result.text, clips),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Execute a Showrunner draft — called when Briana approves the queue item.
+// Creates the Notion Content DB entries (one Newsletter + one per clip).
+// Idempotent via the queue item's `notion_entries_created` flag, so double-
+// clicks on Approve don't duplicate entries.
+// ---------------------------------------------------------------------------
+export interface ShowrunnerExecuteResult {
+  newsletterId?: string;
+  clipIds: { index: number; contentEntryId: string }[];
+  errors: string[];
+}
+
+export async function executeShowrunnerDraft(
+  fullOutput: Record<string, unknown>,
+): Promise<ShowrunnerExecuteResult> {
+  const postDraft = String(fullOutput.post_draft ?? '');
+  const episodeTitle = String(fullOutput.episode_title ?? 'Episode');
+  const substackSubtitle = String(fullOutput.substack_subtitle ?? '');
+  const contentPillars = Array.isArray(fullOutput.content_pillars)
+    ? (fullOutput.content_pillars as string[])
+    : [];
+  const suggestedPostDate =
+    typeof fullOutput.suggested_post_date === 'string'
+      ? fullOutput.suggested_post_date
+      : undefined;
+  const clipCaptions = (Array.isArray(fullOutput.clip_captions)
+    ? (fullOutput.clip_captions as ClipCaption[])
+    : []) as ClipCaption[];
+
+  const result: ShowrunnerExecuteResult = { clipIds: [], errors: [] };
+
+  if (postDraft) {
+    try {
+      result.newsletterId = await createContentEntry({
+        name: `${episodeTitle} — Newsletter`,
+        contentType: ['Newsletter'],
+        platforms: ['Trade Secrets Substack'],
+        contentPillar: contentPillars,
+        publishDate: suggestedPostDate,
+        ventureIds: [TTS_VENTURE_ID],
+        caption: substackSubtitle,
+      });
+    } catch (e) {
+      result.errors.push(`Newsletter: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  for (const clip of clipCaptions) {
+    try {
+      const id = await createContentEntry({
+        name: `${episodeTitle} — Clip ${clip.index}`,
+        status: clip.fileUploadId ? '✅ Done' : undefined,
+        contentType: ['Reel'],
+        platforms: clip.platforms ?? DEFAULT_SOCIAL_PLATFORMS,
+        caption: [clip.caption, clip.hashtags?.join(' ')].filter(Boolean).join('\n\n'),
+        contentPillar: contentPillars,
+        publishDate: clip.publishDate,
+        ventureIds: [TTS_VENTURE_ID],
+        fileUploadIds: clip.fileUploadId ? [clip.fileUploadId] : undefined,
+      });
+      result.clipIds.push({ index: clip.index, contentEntryId: id });
+    } catch (e) {
+      result.errors.push(`Clip ${clip.index}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return result;
+}
+
+// Extract the original inputs from a Showrunner queue item's full_output so
+// a retry can re-run with the same transcript plus whatever new feedback is
+// now loaded by getRecentFeedback.
+export function extractShowrunnerInputs(
+  fullOutput: Record<string, unknown>,
+): {
+  transcript: string;
+  episodeType: EpisodeType;
+  guestName: string;
+  guestLinks: string;
+  timestampedOutline: string;
+  clips: ClipInput[];
+} | null {
+  const inputs = fullOutput.inputs as Record<string, unknown> | undefined;
+  if (!inputs || typeof inputs.transcript !== 'string' || !inputs.transcript.trim()) {
+    return null;
+  }
+  return {
+    transcript: inputs.transcript,
+    episodeType: inputs.episode_type === 'interview' ? 'interview' : 'solo',
+    guestName: typeof inputs.guest_name === 'string' ? inputs.guest_name : '',
+    guestLinks: typeof inputs.guest_links === 'string' ? inputs.guest_links : '',
+    timestampedOutline:
+      typeof inputs.timestamped_outline === 'string' ? inputs.timestamped_outline : '',
+    clips: Array.isArray(inputs.clips) ? (inputs.clips as ClipInput[]) : [],
   };
 }
