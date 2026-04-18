@@ -33,4 +33,8 @@ export const env = {
   anthropic: {
     apiKey: required('ANTHROPIC_API_KEY'),
   },
+  embedding: {
+    model: process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small',
+    dims: Number(process.env.EMBEDDING_DIMS ?? 1536),
+  },
 };
