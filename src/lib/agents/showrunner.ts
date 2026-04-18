@@ -252,11 +252,11 @@ the interview speaker-formatting rules exactly (full name on first mention,
 short form/initials after). No clickbait.>
 
 ### CLIP 1 CAPTION
-<caption body>
-#hashtag1 #hashtag2 #hashtag3
+<caption body — 1-3 sentences, hook in first sentence>
+#TheTradesShow #hashtag2 #hashtag3 #hashtag4 #hashtag5
 
 ### CLIP 2 CAPTION
-<same structure>
+<same structure — include #TheTradesShow, up to 5 tags total>
 ...
 
 ### CONTENT PILLAR

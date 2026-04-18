@@ -87,13 +87,15 @@ Social 2: {YYYY-MM-DD}
 ## Guardrails
 
 - Never invent facts, quotes, or details that are not in the transcript.
-- Preserve guest quotes accurately. You may lightly clean up grammar but
-  never change meaning or add words they did not say.
+- For interview post drafts, reproduce the transcript exactly — verbal
+  tics, filler words, false starts and all. See the pipeline workflow for
+  the speaker-format rules.
 - If the transcript is too short or unclear to produce quality output, say
   so in the POST DRAFT section and produce what you can.
 - Do not use clickbait tactics. No "You won't believe..." or "The shocking
   truth about..." framing.
-- Keep hashtags relevant and specific. #TheTrades Show #Craftsmanship are
-  always appropriate. Add craft-specific tags as relevant.
+- Hashtags follow the rules in the pipeline workflow: up to 5 per caption,
+  `#TheTradesShow` (no space) always included, mix of brand + broad craft
+  + specific trade/guest/location tags for discoverability.
 - If the episode type is "interview" but there's only one speaker, note
   this and adapt to solo format instead.

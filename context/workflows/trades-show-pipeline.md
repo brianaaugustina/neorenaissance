@@ -103,12 +103,50 @@ the opportunity just, like, showed up."
 
 ---
 
+## SEO & Discoverability (applies to all outputs)
+
+Every output — titles, H2 headers, descriptions, and captions — should be
+written to be found, not just read. The TTS audience skews curious-seeker,
+not casual scroller; they arrive via search and recommendation, so concrete
+language beats clever language for discoverability.
+
+**Principles:**
+
+- **Front-load the keywords.** Put the most specific, searchable terms in
+  the first 60 characters of any title or description. Search engines and
+  platform algorithms weight the opening heavily.
+- **Use concrete craft/trade vocabulary.** Prefer "shoe cobbling", "candle
+  making", "bladesmithing", "bread baking" over abstract framings like
+  "the art of slowness." Specific craft nouns are what people search.
+- **Include the guest's full name** in the title (when short enough), the
+  first line of the YouTube description, and the Spotify description.
+  Name searches are one of the highest-intent queries for interviews.
+- **Include the location when relevant.** "San Francisco", "Bay Area",
+  neighborhood names — these anchor discovery for viewers searching local
+  craft scenes.
+- **Use long-tail phrases.** "How to make soy candles from scratch" pulls
+  more discovery than "candle making." Weave these naturally into
+  descriptions and captions, never into titles.
+- **Natural language, not keyword stuffing.** If a sentence reads robotic,
+  it's over-optimized. Rewrite so the keywords appear in flowing prose.
+- **Never sacrifice the TTS voice** for SEO. Evocative still wins over
+  generic — but evocative *and* specific wins over evocative alone.
+
+---
+
 ## Title Conventions
 
-- Short and evocative. 3-8 words.
+- Short and evocative. 3-8 words, ideally under 60 characters so YouTube
+  doesn't truncate in search results.
 - No clickbait. No numbers unless they're the episode number.
 - Can be a phrase from the conversation, a thematic distillation, or a
   question the episode explores.
+- **SEO:** Include the craft or trade name when it fits naturally ("Shoe
+  Cobbling", "Candle Making", "Bladesmithing"). For interview episodes,
+  consider including the guest's first name or brand name if it's the
+  strongest hook. Front-load the keyword — "Reviving American Shoemaking"
+  leads with "Reviving American" which works because "American Shoemaking"
+  is the searchable chunk.
 - Format: `{Episode Number}: {Title}` (e.g., "6: Reviving American
   Shoemaking")
 
@@ -164,6 +202,18 @@ or `HH:MM:SS Title`, one chapter per line}
 - If the user provides a timestamped outline, use it verbatim. If not,
   generate 10-20 chapter markers by scanning the transcript.
 
+**SEO for the YouTube description:**
+- The **first 100-150 characters** of the summary paragraph appear in the
+  YouTube search snippet. Front-load the guest's full name, their craft,
+  and the city/location there. Example opener: *"In this episode of The
+  Trades Show, host Briana Ottoboni sits down with Sarah Larson, founder
+  of San Francisco candle studio Often Wander,..."* — guest name, craft
+  discipline, and city all in the first line.
+- Weave searchable terms naturally into the summary: craft vocabulary,
+  technique names, materials, regional identifiers.
+- Do NOT add a hashtag dump. YouTube descriptions don't need them; hashtags
+  belong on social captions.
+
 ---
 
 ## Spotify Description
@@ -172,8 +222,16 @@ Shorter than YouTube. No formatting, no links (Spotify strips them).
 
 **Structure:**
 ```
-{2-3 sentence summary of the episode and guest/topic}. Hosted by Briana Augustina.
+{2-3 sentence summary of the episode and guest/topic}. Hosted by Briana Ottoboni.
 ```
+
+**SEO for Spotify:**
+- Lead with guest full name + craft in the first sentence. Spotify's search
+  and recommendation surface weights the opening of the description heavily.
+- Include specific craft/trade terms and location. "San Francisco-based
+  candle maker Sarah Larson of Often Wander" is worth more for discovery
+  than "a founder we love."
+- Keep it to 2-3 sentences — Spotify truncates aggressively in the app UI.
 
 ---
 
@@ -183,24 +241,54 @@ One line, 10-20 words. Appears below the title on the Substack post. Should
 complement the title — not repeat it. Can be a question, a teaser, or a
 thematic framing.
 
+**SEO for Substack:**
+- Subtitles are indexed by Substack search and Google. If the title is
+  poetic, let the subtitle carry the searchable terms (craft name, guest,
+  technique, location). Example: title *"The Sacred Workshop"* →
+  subtitle *"A visit with San Francisco bladesmith James Helm, and why
+  hand-forged knives still matter."*
+- H2 headers in the post body carry SEO weight on Substack. Write topic
+  headers that describe their section with searchable specificity — prefer
+  "Starting Often Wander as a Side Project" over "The Beginning".
+
 ---
 
 ## Social Captions
 
-Showrunner produces **6-10 captions**, each for a different piece of content
-(clip, quote card, reel, etc.). Captions are **cross-platform** — each one
-works on IG, TikTok, LinkedIn, and X. Not platform-specific.
+Showrunner produces one caption per clip supplied by the user. Captions are
+**cross-platform** — each one works on IG, TikTok, LinkedIn, and X. Not
+platform-specific.
 
 **Caption guidelines:**
 - 1-3 sentences max. Punchy, not long-form.
 - Pull a compelling quote, insight, or moment from the episode.
-- End with a hook or soft CTA: "Full episode linked above" or "More on
+- **Front-load a hook** in the first sentence — Instagram and TikTok show
+  the first ~125 characters in the feed before the "more" cutoff. That
+  opening line is the whole discovery surface.
+- End with a soft CTA: "Full episode linked above" or "More on
   revivethetrades.substack.com"
-- Use 3-5 relevant hashtags at the end: #TheTrades Show #Craftsmanship
-  #ArtisanTrades #MadeByHand (vary per caption)
 - No emoji overload. One or two max, if any.
 - Voice: warm, direct, craft-aware. Match the energy of the specific
   moment being highlighted.
+
+**Hashtag rules (applies to every caption):**
+- **Up to 5 hashtags.** Never more. Fewer is fine.
+- **`#TheTradesShow` is always included.** Every caption, no exceptions.
+- Mix of specificity for discoverability:
+  - 1 brand tag: `#TheTradesShow`
+  - 1-2 broader craft/theme tags that have real search volume:
+    `#Craftsmanship`, `#ArtisanTrades`, `#MadeByHand`, `#SlowLiving`,
+    `#ModernCraft`
+  - 2-3 specific tags tied to this episode's trade, technique, guest, or
+    location: e.g. `#ShoeCobbling`, `#CandleMaking`, `#Bladesmithing`,
+    `#SanFranciscoMakers`, `#OftenWander`, `#SoyCandles`
+- Vary the niche tags across captions so they cover different discovery
+  entry points — don't use the identical 5-tag set on every caption.
+- Never use super-broad vanity tags (`#love`, `#beautiful`, `#inspire`).
+  They don't drive discovery and dilute relevance.
+- Never use spaces inside hashtags. `#TheTradesShow` is correct;
+  `#The Trades Show` is not a tag.
+- Hashtags go at the end of the caption, on their own line.
 
 **Content angle variety:** Mix these angles across the 6-10 captions:
 - Guest quote (verbatim pull)
