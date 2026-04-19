@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { RunOpsChiefButton } from '@/components/RunOpsChiefButton';
+import { RunPrResearchButton } from '@/components/RunPrResearchButton';
 import { RunSponsorshipResearchButton } from '@/components/RunSponsorshipResearchButton';
 import { ShowrunnerInput } from '@/components/ShowrunnerInput';
 
@@ -69,6 +70,33 @@ export default function AgentsPage() {
             manual until OAuth lands.
           </p>
           <RunSponsorshipResearchButton />
+        </section>
+
+        {/* PR Director */}
+        <section className="card p-5 md:p-6">
+          <div className="flex items-baseline justify-between gap-4 mb-3">
+            <h2 className="serif text-xl">PR Director</h2>
+            <span className="muted text-xs uppercase tracking-widest">
+              The Trades Show · Live
+            </span>
+          </div>
+          <p className="muted text-sm mb-4">
+            Monthly editorial landscape scan, weekly press research, and
+            per-lead Touch 1 drafts. Monthly cron: 1st of month 7am PT.
+            Weekly cron: Mon 7am PT. Approve a lead and a press pitch drafts
+            in your chosen voice mode (founder-first / show-first / hybrid),
+            with a matching Outreach row in Notion. Gate 3 Send is manual
+            until Gmail OAuth lands.
+          </p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <Link
+              href="/agents/pr-director/landscape"
+              className="text-sm gold hover:underline"
+            >
+              View landscape briefing ↗
+            </Link>
+            <RunPrResearchButton />
+          </div>
         </section>
       </div>
     </main>

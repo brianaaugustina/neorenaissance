@@ -14,16 +14,30 @@ interface DelegationSuggestion {
 
 interface ResearchLead {
   lead_id: string;
-  brand_name: string;
-  tier: 'tier-a' | 'tier-b' | 'tier-c';
-  contact_name: string | null;
-  contact_email: string | null;
-  contact_role: string | null;
-  contact_flag: 'unverified-contact' | 'no-named-contact' | null;
+  // Sponsorship fields
+  brand_name?: string;
+  tier?: 'tier-a' | 'tier-b' | 'tier-c';
+  // PR fields
+  journalist_name?: string;
+  outlet?: string;
+  outlet_tier?: string;
+  role?: string | null;
+  beat?: string | null;
+  suggested_voice_mode?: 'founder-first' | 'show-first' | 'hybrid';
+  cultural_moment?: string | null;
+  episode_pairing?: string | null;
+  source_link?: string | null;
+  contact_linkedin?: string | null;
+  // Shared
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_role?: string | null;
+  contact_flag?: 'unverified-contact' | 'no-named-contact' | null;
   fit_score: number;
   fit_rationale: string;
-  suggested_episode: string | null;
-  source_note: string | null;
+  suggested_episode?: string | null;
+  suggested_angle?: string | null;
+  source_note?: string | null;
   approved?: boolean;
   draft_output_id?: string | null;
   outreach_row_id?: string | null;
@@ -36,11 +50,14 @@ interface ResearchBatchPayload {
   total_reviewed?: number;
   surfaced_count?: number;
   season?: string;
+  landscape_briefing_date?: string | null;
   leads?: ResearchLead[];
 }
 
 interface LeadPreviousVersion {
-  brand_name: string;
+  brand_name?: string;
+  journalist_name?: string;
+  outlet?: string;
   fit_score: number;
   feedback: string | null;
   replaced_at: string;
@@ -49,11 +66,19 @@ interface LeadPreviousVersion {
 interface PitchDraftPayload {
   subject?: string;
   body?: string;
-  contact_name?: string | null;
-  contact_email?: string | null;
+  // Sponsorship:
   brand_name?: string;
   cta_type?: 'one-pager' | 'warm-intro' | 'enterprise-both';
   suggested_episode?: string | null;
+  // PR:
+  journalist_name?: string;
+  outlet?: string;
+  voice_mode?: 'founder-first' | 'show-first' | 'hybrid';
+  angle_used?: string | null;
+  episode_pairing?: string | null;
+  // Shared:
+  contact_name?: string | null;
+  contact_email?: string | null;
   touch_number?: number;
   outreach_row_id?: string | null;
 }
@@ -86,16 +111,19 @@ export function QueueCard({ item }: QueueCardProps) {
   const delegationSuggestions = (item.full_output?.delegation_suggestions ?? []) as DelegationSuggestion[];
   const showrunner = item.full_output?.post_draft ? item.full_output : null;
   const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
+  const isOutreachAgent =
+    item.agent_name === 'sponsorship-director' || item.agent_name === 'pr-director';
   const researchBatch =
-    item.agent_name === 'sponsorship-director' && Array.isArray(item.full_output?.leads)
+    isOutreachAgent && Array.isArray(item.full_output?.leads)
       ? (item.full_output as ResearchBatchPayload)
       : null;
   const pitchDraft =
-    item.agent_name === 'sponsorship-director' &&
+    isOutreachAgent &&
     !Array.isArray(item.full_output?.leads) &&
     typeof item.full_output?.body === 'string'
       ? (item.full_output as PitchDraftPayload)
       : null;
+  const agentRoutePrefix = `/api/agents/${item.agent_name}`;
   const [editedBody, setEditedBody] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
@@ -118,7 +146,7 @@ export function QueueCard({ item }: QueueCardProps) {
     startTransition(async () => {
       try {
         const res = await fetch(
-          `/api/agents/sponsorship-director/leads/approve`,
+          `${agentRoutePrefix}/leads/approve`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -144,7 +172,7 @@ export function QueueCard({ item }: QueueCardProps) {
     startTransition(async () => {
       try {
         const res = await fetch(
-          `/api/agents/sponsorship-director/leads/replace`,
+          `${agentRoutePrefix}/leads/replace`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -383,13 +411,16 @@ export function QueueCard({ item }: QueueCardProps) {
         </div>
       )}
 
-      {/* Sponsorship research batch */}
+      {/* Outreach research batch (Sponsorship or PR) */}
       {expanded && researchBatch && (
         <div className="mb-3 space-y-3">
           <div className="text-xs muted">
             Reviewed {researchBatch.total_reviewed ?? 0}, surfacing{' '}
             {researchBatch.leads?.length ?? 0}
             {researchBatch.season ? ` · ${researchBatch.season}` : ''}
+            {researchBatch.landscape_briefing_date
+              ? ` · landscape ${researchBatch.landscape_briefing_date}`
+              : ''}
           </div>
           <ol className="space-y-3">
             {(researchBatch.leads ?? []).map((lead) => {
@@ -407,16 +438,50 @@ export function QueueCard({ item }: QueueCardProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="serif text-base">{lead.brand_name}</span>
-                        <span className="text-xs muted">
-                          {lead.tier} · fit {lead.fit_score}/5
+                        <span className="serif text-base">
+                          {lead.brand_name ??
+                            (lead.journalist_name && lead.outlet
+                              ? `${lead.journalist_name} · ${lead.outlet}`
+                              : (lead.outlet ?? lead.journalist_name ?? 'Lead'))}
                         </span>
+                        <span className="text-xs muted">
+                          {(lead.tier ?? lead.outlet_tier) ? `${lead.tier ?? lead.outlet_tier} · ` : ''}
+                          fit {lead.fit_score}/5
+                        </span>
+                        {lead.suggested_voice_mode && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+                            style={{
+                              border: '1px solid var(--border)',
+                              color: 'var(--muted)',
+                            }}
+                          >
+                            {lead.suggested_voice_mode}
+                          </span>
+                        )}
+                        {lead.cultural_moment && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+                            style={{
+                              border: '1px solid var(--gold-dim)',
+                              color: 'var(--gold)',
+                            }}
+                          >
+                            {lead.cultural_moment.replace(/^cultural-/, '')}
+                          </span>
+                        )}
                         {priorCount > 0 && (
                           <span
                             className="text-[10px] uppercase tracking-wider"
                             style={{ color: 'var(--gold-dim)' }}
                             title={(lead.previous_versions ?? [])
-                              .map((v) => `${v.brand_name}${v.feedback ? ` — ${v.feedback}` : ''}`)
+                              .map((v) => {
+                                const n = v.brand_name ??
+                                  (v.journalist_name && v.outlet
+                                    ? `${v.journalist_name} · ${v.outlet}`
+                                    : v.outlet ?? v.journalist_name ?? '');
+                                return `${n}${v.feedback ? ` — ${v.feedback}` : ''}`;
+                              })
                               .join('\n')}
                           >
                             replaced {priorCount}x
@@ -424,20 +489,39 @@ export function QueueCard({ item }: QueueCardProps) {
                         )}
                       </div>
                       <div className="text-xs muted mt-0.5">
-                        {lead.contact_name
-                          ? `${lead.contact_name}${lead.contact_role ? ` · ${lead.contact_role}` : ''}${lead.contact_email ? ` · ${lead.contact_email}` : ''}`
+                        {lead.contact_name || lead.journalist_name
+                          ? `${lead.contact_name ?? lead.journalist_name}${lead.contact_role || lead.role ? ` · ${lead.contact_role ?? lead.role}` : ''}${lead.contact_email ? ` · ${lead.contact_email}` : ''}`
                           : lead.contact_flag === 'no-named-contact'
                             ? 'no named contact found — agent flagged for manual research'
                             : 'contact unverified'}
                       </div>
                       <p className="mt-1.5">{lead.fit_rationale}</p>
-                      {lead.suggested_episode && (
+                      {(lead.suggested_episode || lead.episode_pairing) && (
                         <p className="text-xs muted mt-1">
-                          pair with · {lead.suggested_episode}
+                          pair with · {lead.suggested_episode ?? lead.episode_pairing}
                         </p>
                       )}
-                      {lead.source_note && (
-                        <p className="text-xs muted mt-0.5">source · {lead.source_note}</p>
+                      {lead.suggested_angle && (
+                        <p className="text-xs muted mt-0.5">
+                          angle · {lead.suggested_angle}
+                        </p>
+                      )}
+                      {(lead.source_note || lead.source_link) && (
+                        <p className="text-xs muted mt-0.5">
+                          source ·{' '}
+                          {lead.source_link ? (
+                            <a
+                              href={lead.source_link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="gold hover:underline"
+                            >
+                              recent piece ↗
+                            </a>
+                          ) : (
+                            lead.source_note
+                          )}
+                        </p>
                       )}
                     </div>
                     <button
@@ -533,10 +617,10 @@ export function QueueCard({ item }: QueueCardProps) {
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs muted">
-            {pitchDraft.contact_name && (
+            {(pitchDraft.contact_name || pitchDraft.journalist_name) && (
               <div>
                 <span className="uppercase tracking-wider">Contact · </span>
-                {pitchDraft.contact_name}
+                {pitchDraft.contact_name ?? pitchDraft.journalist_name}
                 {pitchDraft.contact_email ? ` (${pitchDraft.contact_email})` : ''}
               </div>
             )}
@@ -546,16 +630,34 @@ export function QueueCard({ item }: QueueCardProps) {
                 {pitchDraft.brand_name}
               </div>
             )}
+            {pitchDraft.outlet && (
+              <div>
+                <span className="uppercase tracking-wider">Outlet · </span>
+                {pitchDraft.outlet}
+              </div>
+            )}
+            {pitchDraft.voice_mode && (
+              <div>
+                <span className="uppercase tracking-wider">Voice · </span>
+                {pitchDraft.voice_mode}
+              </div>
+            )}
             {pitchDraft.cta_type && (
               <div>
                 <span className="uppercase tracking-wider">CTA · </span>
                 {pitchDraft.cta_type}
               </div>
             )}
-            {pitchDraft.suggested_episode && (
+            {pitchDraft.angle_used && (
+              <div>
+                <span className="uppercase tracking-wider">Angle · </span>
+                {pitchDraft.angle_used}
+              </div>
+            )}
+            {(pitchDraft.suggested_episode || pitchDraft.episode_pairing) && (
               <div>
                 <span className="uppercase tracking-wider">Episode · </span>
-                {pitchDraft.suggested_episode}
+                {pitchDraft.suggested_episode ?? pitchDraft.episode_pairing}
               </div>
             )}
             {pitchDraft.outreach_row_id && (
