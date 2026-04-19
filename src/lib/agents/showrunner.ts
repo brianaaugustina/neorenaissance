@@ -55,15 +55,26 @@ export interface ClipCaption {
 }
 
 export interface ParsedShowrunnerOutput {
-  postDraft: string;
-  episodeTitle: string;
-  youtubeDescription: string;
-  spotifyDescription: string;
+  // v2 field set — canonical going forward.
+  substackTitle: string;
   substackSubtitle: string;
+  substackPost: string; // was postDraft
+  youtubeTitle: string; // new: SEO-leaning verbose
+  spotifyTitle: string; // new: templated per episode type
+  episodeDescription: string; // new: shared YT + Spotify body
   clipCaptions: ClipCaption[];
   contentPillars: string[];
   suggestedPostDate?: string;
   raw: string;
+
+  // Legacy field carried forward for any code path that still reads them.
+  // postDraft / episodeTitle / youtubeDescription / spotifyDescription are
+  // mirrored from the v2 fields so executeShowrunnerDraft and the dashboard
+  // keep rendering until fully migrated.
+  postDraft: string;
+  episodeTitle: string;
+  youtubeDescription: string;
+  spotifyDescription: string;
 }
 
 export interface ShowrunnerResult extends RunAgentResult<ShowrunnerContext> {
@@ -132,16 +143,38 @@ function parseClipCaptions(text: string, clips: ClipInput[]): ClipCaption[] {
 }
 
 function parseShowrunnerOutput(text: string, clips: ClipInput[]): ParsedShowrunnerOutput {
+  // Try v2 headers first. If a header is missing, fall back to the v1 equivalent
+  // so this parser reads both shapes until the old prompt is fully retired.
+  const substackTitle =
+    parseSection(text, 'SUBSTACK TITLE') || parseSection(text, 'EPISODE TITLE');
+  const substackSubtitle = parseSection(text, 'SUBSTACK SUBTITLE');
+  const substackPost =
+    parseSection(text, 'SUBSTACK POST') || parseSection(text, 'POST DRAFT');
+  const youtubeTitle =
+    parseSection(text, 'YOUTUBE TITLE') || parseSection(text, 'EPISODE TITLE');
+  const spotifyTitle = parseSection(text, 'SPOTIFY TITLE');
+  const episodeDescription =
+    parseSection(text, 'EPISODE DESCRIPTION') ||
+    parseSection(text, 'YOUTUBE DESCRIPTION');
+
   return {
-    postDraft: parseSection(text, 'POST DRAFT'),
-    episodeTitle: parseSection(text, 'EPISODE TITLE'),
-    youtubeDescription: parseSection(text, 'YOUTUBE DESCRIPTION'),
-    spotifyDescription: parseSection(text, 'SPOTIFY DESCRIPTION'),
-    substackSubtitle: parseSection(text, 'SUBSTACK SUBTITLE'),
+    // v2 canonical
+    substackTitle,
+    substackSubtitle,
+    substackPost,
+    youtubeTitle,
+    spotifyTitle,
+    episodeDescription,
     clipCaptions: parseClipCaptions(text, clips),
     contentPillars: parsePillars(text),
     suggestedPostDate: parsePostDate(text),
     raw: text,
+    // Legacy mirrors for any consumer still reading the old names.
+    postDraft: substackPost,
+    episodeTitle: substackTitle,
+    youtubeDescription: episodeDescription,
+    spotifyDescription:
+      parseSection(text, 'SPOTIFY DESCRIPTION') || episodeDescription,
   };
 }
 
@@ -302,7 +335,7 @@ export async function runShowrunner(
         renderExemplarsBlock('social captions', ctx.exemplars.socialCaption, 300);
 
       const clipInstructions = ctx.clips.length
-        ? `Write one caption per clip listed below. Each clip gets its own \`### CLIP N CAPTION\` section where N is the clip number. End each caption with a single line of hashtags.`
+        ? `Write one caption per clip listed below. Each clip gets its own \`### CLIP N CAPTION\` section where N is the clip number. Caption body is 1-3 sentences (hook in first sentence), then a blank line, then exactly \`Full episode linked in bio\` on its own line, then exactly 5 hashtags on a single line starting with #TheTradesShow. No Substack references anywhere.`
         : `No clips provided — omit CLIP CAPTION sections entirely.`;
 
       const system =
@@ -316,33 +349,50 @@ export async function runShowrunner(
         (voiceSection ? '\n\n---\n\n' + voiceSection : '') +
         exemplarsBlock +
         '\n\n---\n\n' +
-        `# Output structure (REQUIRED — parser depends on exact headers)
+        `# Output structure v2 (REQUIRED — parser depends on exact headers)
 
-### EPISODE TITLE
-<one line, plainspoken title>
+Emit sections in this exact order. Use the exact \`### HEADER\` text shown.
+
+### YOUTUBE TITLE
+<SEO-leaning, verbose, 70-95 chars. Example shape: "Artisan Crafts in the
+Age of AI plus Why I Started a Show About Them in San Francisco". Stuff
+real search terms without keyword spam.>
+
+### SPOTIFY TITLE
+<templated per episode type — see system prompt v2 rules>
+- Solo: "[Episode #]. [Title] with Host Briana Ottoboni"
+- Guest: "[Episode #]. [3-4 WORD ALL CAPS PHRASE NAMING THE TRADE]: [Trade Title + Guest Name] on [central themes]"
+Infer [Episode #] from transcript + playbook + retrieval exemplars; use
+"TBD" if you truly cannot.
+
+### EPISODE DESCRIPTION
+<ONE shared description used for both YouTube and Spotify. Follow the
+YouTube description template in the pipeline workflow — hook in first 2
+lines, guest links block (interview), timestamps, "Where to find"
+blocks. 300-500 words.>
+
+### SUBSTACK TITLE
+<one line, the post headline — distinct from subtitle. Warm, specific.>
 
 ### SUBSTACK SUBTITLE
-<one-sentence subtitle>
-
-### YOUTUBE DESCRIPTION
-<300-500 words; first 2 lines are the hook>
-
-### SPOTIFY DESCRIPTION
-<150-250 words>
-
-### POST DRAFT
-<full Substack post in the format defined by the pipeline workflow — adapted
-essay for solo, exact transcript with topic headers for interview. Follow
-the interview speaker-formatting rules exactly (full name on first mention,
-short form/initials after). No clickbait.>
+<one-sentence subtitle.>
 
 ### CLIP 1 CAPTION
 <caption body — 1-3 sentences, hook in first sentence>
+
+Full episode linked in bio
 #TheTradesShow #hashtag2 #hashtag3 #hashtag4 #hashtag5
 
 ### CLIP 2 CAPTION
-<same structure — include #TheTradesShow, up to 5 tags total>
+<same structure — body, blank line, "Full episode linked in bio", blank line, exactly 5 hashtags>
 ...
+
+### SUBSTACK POST
+<full Substack post in markdown, starting with a # H1 of the substack
+title. Format per pipeline workflow — adapted essay for solo, exact
+transcript with topic headers for interview. Follow the interview
+speaker-formatting rules (full name on first mention, short form/initials
+after). This is the ONLY place the transcript appears. No clickbait.>
 
 ### CONTENT PILLAR
 <comma-separated pillars, e.g. Craft, Slow Renaissance>
@@ -380,22 +430,33 @@ ${clipInstructions}` +
 
     buildDeposit: (ctx, r) => {
       parsed = parseShowrunnerOutput(r.text, ctx.clips);
+      const titleDisplay =
+        parsed.substackTitle ||
+        parsed.youtubeTitle ||
+        'Episode Content Package';
       return {
         type: 'draft' as const,
-        title: `Showrunner — ${parsed.episodeTitle || 'Episode Content Package'}`,
+        title: `Showrunner — ${titleDisplay}`,
         summary: `${ctx.episodeType} episode | ${ctx.transcriptWordCount} words | ${parsed.clipCaptions.length} clips`,
         full_output: {
           episode_type: ctx.episodeType,
-          post_draft: parsed.postDraft,
-          episode_title: parsed.episodeTitle,
-          youtube_description: parsed.youtubeDescription,
-          spotify_description: parsed.spotifyDescription,
+          // v2 fields
+          substack_title: parsed.substackTitle,
           substack_subtitle: parsed.substackSubtitle,
+          substack_post: parsed.substackPost,
+          youtube_title: parsed.youtubeTitle,
+          spotify_title: parsed.spotifyTitle,
+          episode_description: parsed.episodeDescription,
           clip_captions: parsed.clipCaptions,
-          // Back-compat: dashboard still reads social_captions for existing Showrunner cards.
-          social_captions: parsed.clipCaptions.map((c) => c.caption),
           content_pillars: parsed.contentPillars,
           suggested_post_date: parsed.suggestedPostDate,
+          // Legacy mirrors (so executeShowrunnerDraft + pre-v2 dashboard
+          // cards keep rendering without a migration).
+          post_draft: parsed.substackPost,
+          episode_title: parsed.substackTitle,
+          youtube_description: parsed.episodeDescription,
+          spotify_description: parsed.episodeDescription,
+          social_captions: parsed.clipCaptions.map((c) => c.caption),
           raw_output: r.text,
           // Inputs — stored so a reject-with-feedback retry can re-run with
           // the same transcript/clips/guest info and only the feedback changes.
@@ -422,7 +483,7 @@ ${clipInstructions}` +
         // Parsed is set by buildDeposit immediately before; safe to reference.
         if (!parsed) return;
 
-        // 1 episode_metadata row
+        // 1 episode_metadata row — v2 fields
         await logOutput({
           agentId: 'showrunner',
           venture: 'trades-show',
@@ -430,10 +491,11 @@ ${clipInstructions}` +
           parentOutputId,
           runId,
           draftContent: {
-            episode_title: parsed.episodeTitle,
+            substack_title: parsed.substackTitle,
             substack_subtitle: parsed.substackSubtitle,
-            youtube_description: parsed.youtubeDescription,
-            spotify_description: parsed.spotifyDescription,
+            youtube_title: parsed.youtubeTitle,
+            spotify_title: parsed.spotifyTitle,
+            episode_description: parsed.episodeDescription,
           },
           tags: ['episode_metadata', ctx.episodeType],
         });
@@ -487,8 +549,13 @@ export interface ShowrunnerExecuteResult {
 export async function executeShowrunnerDraft(
   fullOutput: Record<string, unknown>,
 ): Promise<ShowrunnerExecuteResult> {
-  const postDraft = String(fullOutput.post_draft ?? '');
-  const episodeTitle = String(fullOutput.episode_title ?? 'Episode');
+  // v2 fields preferred; fall back to v1 names so existing queue items still execute.
+  const substackPost = String(
+    fullOutput.substack_post ?? fullOutput.post_draft ?? '',
+  );
+  const episodeTitle = String(
+    fullOutput.substack_title ?? fullOutput.episode_title ?? 'Episode',
+  );
   const substackSubtitle = String(fullOutput.substack_subtitle ?? '');
   const contentPillars = Array.isArray(fullOutput.content_pillars)
     ? (fullOutput.content_pillars as string[])
@@ -503,7 +570,7 @@ export async function executeShowrunnerDraft(
 
   const result: ShowrunnerExecuteResult = { clipIds: [], errors: [] };
 
-  if (postDraft) {
+  if (substackPost) {
     try {
       result.newsletterId = await createContentEntry({
         name: `${episodeTitle} — Newsletter`,
