@@ -55,7 +55,10 @@ export type PressPitchOutputType =
 export interface LandscapeBriefing {
   date: string;
   month_label: string;
-  markdown: string;
+  /** Canonical HTML body from new runs. */
+  html?: string;
+  /** Legacy field from earlier runs. New runs don't populate this. */
+  markdown?: string;
 }
 
 export interface PressLead {
@@ -232,37 +235,53 @@ This briefing is read for context by the next four weekly research runs. It
 does NOT generate pitches. It does NOT surface leads. Its job is to give
 future research runs a current view of where pitches will land best.
 
-# Output format (strict — no JSON envelope)
+# Output format (strict — HTML, no markdown)
 
-Return clean markdown with these four H2 sections in order:
+Return clean semantic HTML. Use real tags — NEVER markdown syntax (no #, ##,
+-, *, **). Use <h2> for section headers, <h3> for sub-section labels inside
+a section, <p> for paragraphs, <strong> to bold key phrases that the eye
+must catch on skim, <em> for soft emphasis, <ul><li> for lists.
 
-## Editorial calendars (next 60 days)
-For each tracked outlet, what themes/issues are publishing and when.
+Four sections, in this exact order, each wrapped in its <h2>:
+
+<h2>Editorial calendars (next 60 days)</h2>
+<p>For each tracked outlet, what themes/issues are publishing and when.
 Include submission deadlines where known. If an outlet has nothing
-notable, skip it. Terse — one line per outlet-issue pairing.
+notable, skip it. Terse — one line per outlet-issue pairing. Use a <ul>
+of <li> items, each with the outlet name bolded.</p>
 
-## Cultural moments + observance dates
-Slow Living Week, AAPI Heritage Month, gift guide season, awards season,
-craft/SF/trades anniversaries — anything in the next 60 days that a
-pitch could naturally tie into. Date + one-line note per moment.
+<h2>Cultural moments + observance dates</h2>
+<p>Slow Living Week, AAPI Heritage Month, gift guide season, awards season,
+craft/SF/trades anniversaries — anything in the next 60 days that a pitch
+could naturally tie into. Date + one-line note per moment. Render as a
+<ul>, each <li> leading with the bolded date or moment name.</p>
 
-## Trending narratives
-What's being written about right now in craft, SF, AI/tech, slow living,
-food/heritage. 3–5 narrative threads max. Qualitative, short.
+<h2>Trending narratives</h2>
+<p>What's being written about right now in craft, SF, AI/tech, slow living,
+food/heritage. 3–5 narrative threads max. Qualitative, short. Render as a
+<ul> with one <li> per narrative, or 3-5 short <p> tags if the threads
+need more than a sentence each.</p>
 
-## Milestone alignment opportunities
-Concrete pairings where a known Trades Show event/episode lines up with
-a cultural moment. Example: "Stuart Brioza episode airs week of [date],
-which falls in Slow Living Week — natural angle for food/culture
-outlets."
+<h2>Milestone alignment opportunities</h2>
+<p>Concrete pairings where a known Trades Show event/episode lines up with
+a cultural moment. Example: <em>"Stuart Brioza episode airs week of
+[date], which falls in Slow Living Week — natural angle for food/culture
+outlets."</em> Use a <ul> of <li> items.</p>
 
 # Rules
+- Tags only: h2, h3, p, ul, li, strong, em, a. No class names, no inline
+  styles, no div wrappers.
+- Bold the most scannable phrases inline — outlet names, cultural moments,
+  episode titles, dates that a 5-second skim must catch.
 - No fluff. Scannable in 2-3 minutes total.
-- If a section has nothing meaningful this month, say so briefly and keep it short.
+- If a section has nothing meaningful this month, say so briefly inside a
+  <p> and keep it short. Still include the <h2>.
 - All dates in Pacific Time.
-- No JSON markers, no code fences around the markdown.
+- No markdown syntax anywhere. No code fences. No preamble or commentary
+  before or after the HTML.
 
-Return ONLY the markdown body. No preamble.
+Return ONLY the HTML body (no <html>, <head>, or <body> wrappers). Start
+with the first <h2>.
 `.trim();
 
 export interface RunLandscapeResult {
@@ -310,10 +329,16 @@ and concrete milestone alignments with current Season 2 episodes.`;
     });
 
     const today = todayIsoPT();
+    // Strip any leading/trailing code fence the model may have wrapped around
+    // the HTML (defensive — our prompt forbids them but models sometimes oblige).
+    const cleanedHtml = result.text
+      .replace(/^\s*```(?:html)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
     const briefing: LandscapeBriefing = {
       date: today,
       month_label: monthLabel,
-      markdown: result.text.trim(),
+      html: cleanedHtml,
     };
 
     const outputId = await logOutput({
@@ -502,8 +527,9 @@ export async function runPressResearch(
         permanentPreferences.map((r) => `- ${r}`).join('\n')
       : '';
 
-    const landscapeBlock = landscape?.briefing.markdown
-      ? `\n\n---\n\n# Current editorial landscape briefing (${landscape.briefing.month_label} · dated ${landscape.briefing.date})\nUse cultural moments and milestone alignments from this when tagging leads. Only reference cultural moments that appear here.\n\n${landscape.briefing.markdown}`
+    const landscapeBody = landscape?.briefing.html ?? landscape?.briefing.markdown;
+    const landscapeBlock = landscapeBody
+      ? `\n\n---\n\n# Current editorial landscape briefing (${landscape!.briefing.month_label} · dated ${landscape!.briefing.date})\nUse cultural moments and milestone alignments from this when tagging leads. Only reference cultural moments that appear here.\n\n${landscapeBody}`
       : `\n\n# Landscape briefing\n(none available — first run or monthly cron hasn't fired. Proceed with evergreen angles.)`;
 
     const system =
@@ -1136,8 +1162,9 @@ export async function replaceLead(
       permanentPreferences.map((r) => `- ${r}`).join('\n')
     : '';
 
-  const landscapeBlock = landscape?.briefing.markdown
-    ? `\n\n---\n\n# Editorial landscape context (${landscape.briefing.month_label} · ${landscape.briefing.date})\n${landscape.briefing.markdown}`
+  const landscapeBodyReplace = landscape?.briefing.html ?? landscape?.briefing.markdown;
+  const landscapeBlock = landscapeBodyReplace
+    ? `\n\n---\n\n# Editorial landscape context (${landscape!.briefing.month_label} · ${landscape!.briefing.date})\n${landscapeBodyReplace}`
     : '';
 
   const system =

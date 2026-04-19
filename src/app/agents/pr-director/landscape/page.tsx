@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import DOMPurify from 'isomorphic-dompurify';
 import {
   getLatestLandscapeBriefing,
   listRecentLandscapeBriefings,
@@ -13,6 +14,15 @@ export default async function LandscapePage() {
     getLatestLandscapeBriefing(),
     listRecentLandscapeBriefings(12),
   ]);
+
+  // New runs store HTML; legacy runs stored markdown. Prefer HTML when present.
+  const latestHtml = latest
+    ? latest.briefing.html
+      ? DOMPurify.sanitize(latest.briefing.html)
+      : latest.briefing.markdown
+        ? renderLegacyMarkdownToHtml(latest.briefing.markdown)
+        : ''
+    : '';
 
   return (
     <main className="min-h-screen px-4 py-6 md:px-10 md:py-10 max-w-[960px] mx-auto">
@@ -52,9 +62,10 @@ export default async function LandscapePage() {
               Generated {latest.briefing.date}
             </span>
           </div>
-          <article className="briefing-body text-sm leading-relaxed">
-            {renderSimpleMarkdown(latest.briefing.markdown)}
-          </article>
+          <article
+            className="briefing-body text-sm"
+            dangerouslySetInnerHTML={{ __html: latestHtml }}
+          />
         </section>
       )}
 
@@ -76,56 +87,67 @@ export default async function LandscapePage() {
   );
 }
 
-// Tiny markdown renderer for the briefing body. Claude emits ## headers and
-// plain paragraphs; no need to pull in a full parser for this shape.
-function renderSimpleMarkdown(md: string): React.ReactNode {
+// Fallback for rows stored before the HTML switch. Converts the four-section
+// markdown shape Claude produced previously into minimally-styled HTML.
+// Handles: ## headers, - / * bullets, paragraphs.
+function renderLegacyMarkdownToHtml(md: string): string {
   const lines = md.split('\n');
-  const nodes: React.ReactNode[] = [];
+  const out: string[] = [];
+  let inList = false;
   let para: string[] = [];
   const flushPara = () => {
     if (para.length) {
-      nodes.push(
-        <p key={`p-${nodes.length}`} className="mb-3">
-          {para.join(' ')}
-        </p>,
-      );
+      out.push(`<p>${escapeHtml(para.join(' '))}</p>`);
       para = [];
     }
   };
-  lines.forEach((line, i) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushPara();
-      return;
+  const closeList = () => {
+    if (inList) {
+      out.push('</ul>');
+      inList = false;
     }
-    if (trimmed.startsWith('## ')) {
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
       flushPara();
-      nodes.push(
-        <h2 key={`h2-${i}`}>{trimmed.slice(3)}</h2>,
-      );
-      return;
+      closeList();
+      continue;
     }
-    if (trimmed.startsWith('# ')) {
+    if (line.startsWith('## ')) {
       flushPara();
-      nodes.push(<h1 key={`h1-${i}`}>{trimmed.slice(2)}</h1>);
-      return;
+      closeList();
+      out.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+      continue;
     }
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    if (line.startsWith('# ')) {
       flushPara();
-      // Group consecutive bullets
-      const last = nodes[nodes.length - 1];
-      if (last && typeof last === 'object' && 'type' in (last as any) && (last as any).type === 'ul') {
-        // Can't actually mutate a React element. Just push a new ul — cheap.
+      closeList();
+      out.push(`<h2>${escapeHtml(line.slice(2))}</h2>`);
+      continue;
+    }
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      flushPara();
+      if (!inList) {
+        out.push('<ul>');
+        inList = true;
       }
-      nodes.push(
-        <ul key={`ul-${i}`} className="list-disc pl-5 mb-1">
-          <li>{trimmed.slice(2)}</li>
-        </ul>,
-      );
-      return;
+      out.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+      continue;
     }
-    para.push(trimmed);
-  });
+    closeList();
+    para.push(line);
+  }
   flushPara();
-  return <>{nodes}</>;
+  closeList();
+  return DOMPurify.sanitize(out.join('\n'));
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
