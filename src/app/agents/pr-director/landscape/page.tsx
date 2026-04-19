@@ -1,9 +1,9 @@
 import Link from 'next/link';
-import DOMPurify from 'isomorphic-dompurify';
 import {
   getLatestLandscapeBriefing,
   listRecentLandscapeBriefings,
 } from '@/lib/agents/pr-director';
+import { LandscapeBody } from '@/components/LandscapeBody';
 import { RunLandscapeBriefingButton } from '@/components/RunLandscapeBriefingButton';
 
 export const dynamic = 'force-dynamic';
@@ -14,15 +14,6 @@ export default async function LandscapePage() {
     getLatestLandscapeBriefing(),
     listRecentLandscapeBriefings(12),
   ]);
-
-  // New runs store HTML; legacy runs stored markdown. Prefer HTML when present.
-  const latestHtml = latest
-    ? latest.briefing.html
-      ? DOMPurify.sanitize(latest.briefing.html)
-      : latest.briefing.markdown
-        ? renderLegacyMarkdownToHtml(latest.briefing.markdown)
-        : ''
-    : '';
 
   return (
     <main className="min-h-screen px-4 py-6 md:px-10 md:py-10 max-w-[960px] mx-auto">
@@ -62,9 +53,9 @@ export default async function LandscapePage() {
               Generated {latest.briefing.date}
             </span>
           </div>
-          <article
-            className="briefing-body text-sm"
-            dangerouslySetInnerHTML={{ __html: latestHtml }}
+          <LandscapeBody
+            html={latest.briefing.html}
+            markdown={latest.briefing.markdown}
           />
         </section>
       )}
@@ -74,8 +65,11 @@ export default async function LandscapePage() {
           <h2 className="serif text-lg mb-3">History</h2>
           <ul className="space-y-2 text-sm">
             {history.slice(1).map((h) => (
-              <li key={h.id} className="flex justify-between gap-4 border-b pb-2"
-                  style={{ borderColor: 'var(--border)' }}>
+              <li
+                key={h.id}
+                className="flex justify-between gap-4 border-b pb-2"
+                style={{ borderColor: 'var(--border)' }}
+              >
                 <span>{h.month_label}</span>
                 <span className="muted text-xs">{h.date}</span>
               </li>
@@ -85,69 +79,4 @@ export default async function LandscapePage() {
       )}
     </main>
   );
-}
-
-// Fallback for rows stored before the HTML switch. Converts the four-section
-// markdown shape Claude produced previously into minimally-styled HTML.
-// Handles: ## headers, - / * bullets, paragraphs.
-function renderLegacyMarkdownToHtml(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let inList = false;
-  let para: string[] = [];
-  const flushPara = () => {
-    if (para.length) {
-      out.push(`<p>${escapeHtml(para.join(' '))}</p>`);
-      para = [];
-    }
-  };
-  const closeList = () => {
-    if (inList) {
-      out.push('</ul>');
-      inList = false;
-    }
-  };
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) {
-      flushPara();
-      closeList();
-      continue;
-    }
-    if (line.startsWith('## ')) {
-      flushPara();
-      closeList();
-      out.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
-      continue;
-    }
-    if (line.startsWith('# ')) {
-      flushPara();
-      closeList();
-      out.push(`<h2>${escapeHtml(line.slice(2))}</h2>`);
-      continue;
-    }
-    if (line.startsWith('- ') || line.startsWith('* ')) {
-      flushPara();
-      if (!inList) {
-        out.push('<ul>');
-        inList = true;
-      }
-      out.push(`<li>${escapeHtml(line.slice(2))}</li>`);
-      continue;
-    }
-    closeList();
-    para.push(line);
-  }
-  flushPara();
-  closeList();
-  return DOMPurify.sanitize(out.join('\n'));
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
