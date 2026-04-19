@@ -114,11 +114,13 @@ Line breaks matter. Instagram collapses long paragraphs; short paragraphs with b
 - **Sparingly placed.** One or two per caption, not sprinkled throughout.
 - **Functional, not decorative.** 🎙️ or 🎧 for "listen," ▶️ for video, ✨ for celebration or emphasis. Emojis that match the craft (🕯️ for candles, 🪓 for butchery, 🔥 for blacksmithing) are welcome when thematically right.
 
-### Hashtag strategy — the explicit rules
+### Hashtag strategy — STRICT v2 rules
 
-**Count:** up to 5 per post, ideally 5. Instagram-recommended number for discoverability; Briana treats as a soft cap.
+**Count:** **exactly 5 per post.** Not 4, not 6. Five. This is no longer a soft cap.
 
-**Always include:** `#TheTradesShow` (canonical casing `#TheTradesShow`; `#thetradesshow` also present in archive — pick one per post, stay consistent).
+**Always include:** `#TheTradesShow` (canonical casing — retire lower-case `#thetradesshow`). One of the five slots is always this tag.
+
+**Remaining four:** pick four from the rotation list below or craft-specific / episode-specific tags, per the selection principle.
 
 **Core brand hashtags to rotate among:**
 - `#ReviveTheArtisanTrades`
@@ -153,16 +155,21 @@ Line breaks matter. Instagram collapses long paragraphs; short paragraphs with b
 - Episode launch (Angela Wilson): `#TheTradesShow #CraftButchery #FoodSystem` (3)
 - Theme reel (Marcia rest): `#Blacksmithing #Creativity #StrikeWhileTheIronIsHot #TheTradesShow #ReviveTheArtisanTrades` (5 — at the cap)
 
-### CTA lines — the standard phrasings
+### CTA line — STRICT v2 rule
 
-For episode reels and launch posts, include a CTA near the end. Rotate among:
+Every caption ends with this exact line on its own new line, right before the hashtag block:
 
-- `🎙️ Full episode out now on Spotify, YouTube, and wherever you listen to podcasts, linked in bio`
-- `🎧 The full episode is out now on Spotify & YouTube — link in bio!`
-- `▶️ Full episode on YouTube + wherever you listen.`
-- For IG-exclusive moments: `Listen via the link in our bio or comment PODCAST to get the goods 🎙️`
+```
+Full episode linked in bio
+```
 
-Theme/reflection reels not tied to a specific new episode can skip the CTA or use a softer one: "go catch up before the rest of Season 2 drops!"
+Verbatim. No emoji, no variation ("Full episode on YouTube", "Listen via link in bio", "link in our bio" — all retired). One canonical phrasing. It anchors every caption regardless of whether it's an episode launch, theme reel, or reflection.
+
+### Forbidden in captions — STRICT v2
+
+- **Never reference Substack.** No `revivethetrades.substack.com`, no "on Substack," no "read the full post on Substack." The Substack link lives in bio. Captions stay platform-local.
+- **Never include the full transcript.** Transcript content lives only in the Substack post (long-form). Captions are 1-3 sentence standalone hooks drawn from the clip transcript, not the transcript itself.
+- **Never include the old rotating CTAs** ("Spotify, YouTube, and wherever you listen…" etc.). Replaced entirely by `Full episode linked in bio`.
 
 ### Tagging
 
