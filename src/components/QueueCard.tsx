@@ -105,11 +105,15 @@ interface QueueCardProps {
 export function QueueCard({ item }: QueueCardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [isRetrying, setIsRetrying] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isSuperseded = item.status === 'superseded';
+  const supersededByQueueId =
+    (item.full_output?.superseded_by_queue_id as string | undefined) ?? undefined;
 
   const briefingHtml = item.full_output?.briefing_html as string | undefined;
   const briefingLegacyMarkdown = item.full_output?.briefing_markdown as string | undefined;
@@ -203,17 +207,13 @@ export function QueueCard({ item }: QueueCardProps) {
     });
   };
 
-  const act = (status: 'approved' | 'rejected') => {
+  const approve = () => {
     setError(null);
-    const feedbackText = feedback.trim();
-    const shouldRetry = status === 'rejected' && !!feedbackText;
-
-    // For pitch drafts, send the (possibly edited) body so Gate 2 writes the
-    // final text into agent_outputs + the Notion Outreach row's Draft Message.
-    const finalBody =
-      pitchDraft && status === 'approved'
-        ? (editedBody ?? pitchDraft.body ?? '').trim() || undefined
-        : undefined;
+    // For pitch drafts, include the (possibly edited) body. Status route
+    // writes it back to approval_queue.full_output.body + Notion.
+    const finalBody = pitchDraft
+      ? (editedBody ?? pitchDraft.body ?? '').trim() || undefined
+      : undefined;
 
     startTransition(async () => {
       try {
@@ -221,50 +221,43 @@ export function QueueCard({ item }: QueueCardProps) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            status,
-            feedback: feedbackText || undefined,
+            status: 'approved',
             finalBody,
           }),
         });
         if (!res.ok) {
           const payload = await res.json().catch(() => ({}));
-          throw new Error(payload.error || `Status update failed (${res.status})`);
+          throw new Error(payload.error || `Approve failed (${res.status})`);
         }
+        setEditing(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
 
-        if (!shouldRetry) {
-          setHidden(true);
-          return;
-        }
-
-        // Reject with feedback → trigger a retry. Keep the card visible with a
-        // "Retrying..." state so Briana sees progress.
-        setIsRetrying(true);
-        const retryRes = await fetch(`/api/queue/${item.id}/retry`, {
+  const submitUpdate = () => {
+    setError(null);
+    const text = feedback.trim();
+    if (!text) {
+      setError('Feedback is required for Update.');
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/queue/${item.id}/update`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback: text }),
         });
-        const retryPayload = await retryRes.json().catch(() => ({}));
-        if (!retryRes.ok) {
-          setIsRetrying(false);
-          // Retry failed — undo the rejection so the item isn't lost. The
-          // feedback text stays promoted in feedback_rules (it's useful there
-          // regardless), but the item returns to pending so Briana can decide
-          // whether to approve as-is or take another action.
-          try {
-            await fetch(`/api/queue/${item.id}/status`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'pending' }),
-            });
-          } catch {
-            // Best-effort undo; if this fails, the recover-deferred script
-            // can restore the item from the command line.
-          }
-          throw new Error(
-            retryPayload.error ||
-              `Retry failed (${retryRes.status}). Item restored to pending.`,
-          );
-        }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `Update failed (${res.status})`);
+        // Old card stays in the list as 'superseded' until next page load;
+        // router.refresh pulls the new item.
         setHidden(true);
+        setFeedback('');
+        setUpdating(false);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed');
@@ -673,21 +666,29 @@ export function QueueCard({ item }: QueueCardProps) {
                 <span style={{ color: 'var(--gold-dim)' }}>· edited</span>
               )}
             </div>
-            <textarea
-              value={editedBody ?? pitchDraft.body ?? ''}
-              onChange={(e) => setEditedBody(e.target.value)}
-              rows={Math.min(
-                20,
-                Math.max(
-                  8,
-                  (editedBody ?? pitchDraft.body ?? '').split('\n').length + 1,
-                ),
-              )}
-              className="w-full bg-transparent border rounded-md px-3 py-2 text-sm leading-relaxed resize-y"
-              style={{ borderColor: 'var(--border)' }}
-            />
+            {editing ? (
+              <textarea
+                value={editedBody ?? pitchDraft.body ?? ''}
+                onChange={(e) => setEditedBody(e.target.value)}
+                rows={Math.min(
+                  20,
+                  Math.max(
+                    8,
+                    (editedBody ?? pitchDraft.body ?? '').split('\n').length + 1,
+                  ),
+                )}
+                className="w-full bg-transparent border rounded-md px-3 py-2 text-sm leading-relaxed resize-y"
+                style={{ borderColor: 'var(--gold-dim)' }}
+              />
+            ) : (
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed">
+                {editedBody ?? pitchDraft.body ?? ''}
+              </pre>
+            )}
             <p className="text-xs muted mt-1">
-              Edit in place — your changes are saved to Notion on Approve.
+              {editing
+                ? 'Edit mode on — changes save to Notion on Approve.'
+                : 'Read-only. Click Edit below to modify, or Update for agent regen.'}
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs muted">
@@ -841,41 +842,142 @@ export function QueueCard({ item }: QueueCardProps) {
         </button>
       )}
 
-      {isRetrying && (
-        <p className="text-xs mb-2" style={{ color: 'var(--gold)' }}>
-          Retrying with your feedback… this usually takes 30-60 seconds.
-        </p>
+      {/* Superseded banner — this card was replaced by a newer run. No approve controls. */}
+      {isSuperseded && (
+        <div
+          className="mt-3 text-xs border rounded-md px-3 py-2"
+          style={{
+            borderColor: 'var(--gold-dim)',
+            color: 'var(--muted)',
+            background: 'color-mix(in srgb, var(--surface-2) 70%, transparent)',
+          }}
+        >
+          Superseded — replaced by a newer draft
+          {supersededByQueueId ? ' (see latest below).' : '.'}
+          {item.full_output?.superseded_feedback && (
+            <div className="mt-1 italic" style={{ color: 'var(--gold-dim)' }}>
+              Feedback used: &ldquo;{item.full_output.superseded_feedback}&rdquo;
+            </div>
+          )}
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 mt-3">
-        <button
-          onClick={() => act('approved')}
-          disabled={isPending}
-          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[88px]"
-          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+      {/* Update-in-progress feedback textarea. Shown when the Update button is
+          clicked; supersedes the regular 4-button row until Cancel or Submit. */}
+      {!isSuperseded && updating && (
+        <div
+          className="mt-3 border rounded-md p-3 space-y-2"
+          style={{ borderColor: 'var(--gold-dim)' }}
         >
-          Approve
-        </button>
-        <button
-          onClick={() => act('rejected')}
-          disabled={isPending}
-          className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[44px] min-w-[80px]"
-          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-        >
-          {isRetrying ? 'Rejecting…' : feedback.trim() ? 'Reject & Retry' : 'Reject'}
-        </button>
-        <input
-          type="text"
-          placeholder="Feedback…"
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          className="flex-1 min-w-[140px] bg-transparent border rounded-md px-3 py-2 text-sm min-h-[44px]"
-          style={{ borderColor: 'var(--border)' }}
-        />
-      </div>
+          <div
+            className="text-xs uppercase tracking-wider"
+            style={{ color: 'var(--gold)' }}
+          >
+            Feedback for this output
+          </div>
+          <textarea
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            placeholder={updatePlaceholder(item.agent_name, item.type)}
+            rows={3}
+            disabled={isPending}
+            className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
+            style={{ borderColor: 'var(--border)' }}
+          />
+          <p className="text-[11px] muted">
+            The agent re-runs and applies this feedback to the relevant
+            sub-output. Other sections stay byte-identical.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={submitUpdate}
+              disabled={isPending || !feedback.trim()}
+              className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px]"
+              style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+            >
+              {isPending ? 'Running…' : 'Update'}
+            </button>
+            <button
+              onClick={() => {
+                setUpdating(false);
+                setFeedback('');
+                setError(null);
+              }}
+              disabled={isPending}
+              className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px]"
+              style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4-button action row — Review, Approve, Edit, Update. Hidden while
+          Update feedback is being composed or item is superseded. */}
+      {!isSuperseded && !updating && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <a
+            href={`/queue/${item.id}/review`}
+            className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition min-h-[40px] inline-flex items-center"
+            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+          >
+            Review
+          </a>
+          <button
+            onClick={approve}
+            disabled={isPending}
+            className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px] min-w-[88px]"
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+          >
+            {isPending && !updating ? 'Saving…' : 'Approve'}
+          </button>
+          <button
+            onClick={() => {
+              setEditing((v) => !v);
+              if (expanded === false) setExpanded(true);
+            }}
+            disabled={isPending}
+            className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px]"
+            style={{
+              borderColor: editing ? 'var(--gold)' : 'var(--border)',
+              color: editing ? 'var(--gold)' : 'var(--muted)',
+            }}
+          >
+            {editing ? 'Editing · click to lock' : 'Edit'}
+          </button>
+          <button
+            onClick={() => {
+              setUpdating(true);
+              setError(null);
+            }}
+            disabled={isPending}
+            className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px]"
+            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+          >
+            Update
+          </button>
+        </div>
+      )}
       {error && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{error}</p>}
     </article>
   );
+}
+
+function updatePlaceholder(agent: string, type: string): string {
+  if (agent === 'showrunner' && type === 'draft') {
+    return 'e.g. "Tighten the Spotify title — lead with the trade." Or "Replace the #HandsAtWork tag with #ModernCraft in every caption." The agent figures out scope from your wording.';
+  }
+  if (agent === 'ops_chief' && type === 'briefing') {
+    return 'e.g. "Reorder so the grant deadline leads, not the jacket return."';
+  }
+  if (
+    (agent === 'sponsorship-director' || agent === 'pr-director') &&
+    type === 'draft'
+  ) {
+    return 'e.g. "Less formal — drop the opening flattery. Keep everything else."';
+  }
+  return 'What should the agent change?';
 }
 
 // ============================================================================
