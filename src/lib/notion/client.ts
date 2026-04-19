@@ -249,6 +249,24 @@ export async function getWeekTasks(startIso?: string, endIso?: string): Promise<
   return res.results.map(mapTask);
 }
 
+// Recently-completed tasks — Status = Done AND last edited within the window.
+// Used by Ops Chief briefing to ground cross-agent recommendations in what
+// actually got finished (e.g., if Showrunner's caption task was just marked
+// Done, the next delegation doesn't need to flag that clip again).
+export async function getCompletedTasksSince(sinceIso: string): Promise<Task[]> {
+  const res: any = await queryDs(env.notion.tasksDbId, {
+    filter: {
+      and: [
+        { property: 'Status', status: { equals: 'Done' } },
+        { timestamp: 'last_edited_time', last_edited_time: { on_or_after: sinceIso } },
+      ],
+    },
+    sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+    page_size: 30,
+  });
+  return res.results.map(mapTask);
+}
+
 // Overdue: open tasks whose To-Do Date is strictly before today. Deliberately
 // uncapped per product decision — nothing should silently disappear.
 export async function getOverdueTasks(todayIso?: string): Promise<Task[]> {
