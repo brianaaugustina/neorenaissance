@@ -13,7 +13,8 @@ const DEFAULT_PLATFORMS = ['IN@tradesshow', 'TIKTOK@tradesshow', 'LI@brianaottob
 export function ShowrunnerInput() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [episodeType, setEpisodeType] = useState<'solo' | 'interview'>('solo');
+  // v2 default: Guest interview. Solo moved to a toggle at the bottom.
+  const [episodeType, setEpisodeType] = useState<'solo' | 'interview'>('interview');
   const [transcript, setTranscript] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestLinks, setGuestLinks] = useState('');
@@ -103,19 +104,6 @@ export function ShowrunnerInput() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <label className="text-xs muted">Type</label>
-        <select
-          value={episodeType}
-          onChange={(e) => setEpisodeType(e.target.value as 'solo' | 'interview')}
-          className="bg-transparent border rounded-md px-3 py-1.5 text-sm min-h-[36px]"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <option value="solo">Solo</option>
-          <option value="interview">Interview</option>
-        </select>
-      </div>
-
       <textarea
         value={transcript}
         onChange={(e) => {
@@ -253,6 +241,24 @@ export function ShowrunnerInput() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Solo toggle — v2 default is Guest interview. Check this for solo episodes. */}
+      <div
+        className="flex items-center gap-2 pt-2 border-t"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        <input
+          id="solo-toggle"
+          type="checkbox"
+          checked={episodeType === 'solo'}
+          onChange={(e) => setEpisodeType(e.target.checked ? 'solo' : 'interview')}
+          className="accent-[var(--gold)]"
+          disabled={isPending}
+        />
+        <label htmlFor="solo-toggle" className="text-xs muted cursor-pointer">
+          Solo episode (uncheck for guest interview)
+        </label>
       </div>
 
       <button

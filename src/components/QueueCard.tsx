@@ -115,7 +115,11 @@ export function QueueCard({ item }: QueueCardProps) {
   const briefingLegacyMarkdown = item.full_output?.briefing_markdown as string | undefined;
   const hasBriefing = !!(briefingHtml || briefingLegacyMarkdown);
   const delegationSuggestions = (item.full_output?.delegation_suggestions ?? []) as DelegationSuggestion[];
-  const showrunner = item.full_output?.post_draft ? item.full_output : null;
+  // v2 fields first, legacy fallback for older queue items. Detect either shape.
+  const showrunner =
+    item.full_output?.substack_post || item.full_output?.post_draft
+      ? item.full_output
+      : null;
   const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
   const isOutreachAgent =
     item.agent_name === 'sponsorship-director' || item.agent_name === 'pr-director';
@@ -131,7 +135,8 @@ export function QueueCard({ item }: QueueCardProps) {
       : null;
   const agentRoutePrefix = `/api/agents/${item.agent_name}`;
   const [editedBody, setEditedBody] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
+  // v2 tab order: meta (Titles & Descriptions) → captions → post (Substack Post)
+  const [activeTab, setActiveTab] = useState<'meta' | 'captions' | 'post'>('meta');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
   const [leadMutations, setLeadMutations] = useState<Record<string, 'pending' | 'done' | 'error'>>({});
   const [leadReplacing, setLeadReplacing] = useState<Record<string, boolean>>({});
@@ -359,11 +364,11 @@ export function QueueCard({ item }: QueueCardProps) {
         </div>
       )}
 
-      {/* Showrunner content package */}
+      {/* Showrunner content package — v2 tab order + labels */}
       {expanded && showrunner && (
         <div className="mb-3">
           <div className="flex gap-2 mb-3">
-            {(['post', 'meta', 'captions'] as const).map((tab) => (
+            {(['meta', 'captions', 'post'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -373,46 +378,104 @@ export function QueueCard({ item }: QueueCardProps) {
                   color: activeTab === tab ? 'var(--gold)' : 'var(--muted)',
                 }}
               >
-                {tab === 'post' ? 'Post Draft' : tab === 'meta' ? 'Titles & Descriptions' : 'Social Captions'}
+                {tab === 'meta'
+                  ? 'Titles & Descriptions'
+                  : tab === 'captions'
+                    ? 'Social Captions'
+                    : 'Substack Post'}
               </button>
             ))}
           </div>
 
-          {activeTab === 'post' && (
-            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap text-sm max-h-[400px] overflow-y-auto">
-              {showrunner.post_draft}
-            </div>
-          )}
-
           {activeTab === 'meta' && (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
               <div>
-                <span className="text-xs muted uppercase tracking-wider">Episode Title</span>
-                <p className="serif mt-1">{showrunner.episode_title}</p>
+                <span className="text-xs muted uppercase tracking-wider">
+                  YouTube title
+                </span>
+                <p className="serif mt-1">
+                  {showrunner.youtube_title ?? showrunner.episode_title ?? '(not set)'}
+                </p>
               </div>
               <div>
-                <span className="text-xs muted uppercase tracking-wider">Substack Subtitle</span>
-                <p className="mt-1">{showrunner.substack_subtitle}</p>
+                <span className="text-xs muted uppercase tracking-wider">
+                  Spotify title
+                </span>
+                <p className="serif mt-1">
+                  {showrunner.spotify_title ?? '(not set)'}
+                </p>
               </div>
               <div>
-                <span className="text-xs muted uppercase tracking-wider">YouTube Description</span>
-                <pre className="mt-1 whitespace-pre-wrap text-xs muted">{showrunner.youtube_description}</pre>
+                <span className="text-xs muted uppercase tracking-wider">
+                  Episode description (YouTube + Spotify)
+                </span>
+                <pre className="mt-1 whitespace-pre-wrap text-xs muted">
+                  {showrunner.episode_description ??
+                    showrunner.youtube_description ??
+                    showrunner.spotify_description ??
+                    '(not set)'}
+                </pre>
               </div>
               <div>
-                <span className="text-xs muted uppercase tracking-wider">Spotify Description</span>
-                <p className="mt-1 text-xs muted">{showrunner.spotify_description}</p>
+                <span className="text-xs muted uppercase tracking-wider">
+                  Substack title
+                </span>
+                <p className="serif mt-1">
+                  {showrunner.substack_title ?? showrunner.episode_title ?? '(not set)'}
+                </p>
+              </div>
+              <div>
+                <span className="text-xs muted uppercase tracking-wider">
+                  Substack subtitle
+                </span>
+                <p className="mt-1">{showrunner.substack_subtitle ?? '(not set)'}</p>
               </div>
             </div>
           )}
 
           {activeTab === 'captions' && (
             <ol className="space-y-3 text-sm list-decimal list-inside">
-              {(showrunner.social_captions as string[] ?? []).map((caption: string, i: number) => (
-                <li key={i} className="muted">
-                  {caption}
-                </li>
-              ))}
+              {(() => {
+                // Prefer the structured clip_captions (v1 + v2 both have this).
+                // Fall back to legacy social_captions[] string array.
+                interface ShowrunnerClipCaption {
+                  caption?: string;
+                  hashtags?: string[];
+                }
+                const clipCaptions = Array.isArray(showrunner.clip_captions)
+                  ? (showrunner.clip_captions as ShowrunnerClipCaption[])
+                  : [];
+                if (clipCaptions.length > 0) {
+                  return clipCaptions.map((c, i) => {
+                    const hashtags = Array.isArray(c.hashtags) ? c.hashtags.join(' ') : '';
+                    return (
+                      <li key={i} className="muted whitespace-pre-wrap">
+                        {c.caption ?? ''}
+                        {hashtags && (
+                          <div className="text-xs" style={{ color: 'var(--gold-dim)' }}>
+                            {hashtags}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  });
+                }
+                const legacy = Array.isArray(showrunner.social_captions)
+                  ? (showrunner.social_captions as string[])
+                  : [];
+                return legacy.map((caption: string, i: number) => (
+                  <li key={i} className="muted whitespace-pre-wrap">
+                    {caption}
+                  </li>
+                ));
+              })()}
             </ol>
+          )}
+
+          {activeTab === 'post' && (
+            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap text-sm max-h-[400px] overflow-y-auto">
+              {showrunner.substack_post ?? showrunner.post_draft ?? '(empty)'}
+            </div>
           )}
         </div>
       )}
