@@ -15,6 +15,7 @@ export function RunTalentResearchButton() {
     reviewed: number;
     surfaced: number;
     contactsWritten: number;
+    webSearches: number;
   } | null>(null);
 
   const normalize = (raw: string): number => {
@@ -41,6 +42,7 @@ export function RunTalentResearchButton() {
           reviewed: data.reviewed,
           surfaced: data.surfaced,
           contactsWritten: data.contactsWritten,
+          webSearches: data.webSearches ?? 0,
         });
         router.refresh();
       } catch (e) {
@@ -77,7 +79,8 @@ export function RunTalentResearchButton() {
       </div>
       {lastResult && (
         <p className="text-xs muted">
-          Reviewed {lastResult.reviewed}, surfaced {lastResult.surfaced}.{' '}
+          Reviewed {lastResult.reviewed}, surfaced {lastResult.surfaced} ·{' '}
+          {lastResult.webSearches} web search{lastResult.webSearches === 1 ? '' : 'es'} ·{' '}
           {lastResult.contactsWritten} added to Contacts DB.
         </p>
       )}

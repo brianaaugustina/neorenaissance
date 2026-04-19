@@ -44,6 +44,12 @@ export interface ThinkParams {
   systemPrompt: string;
   userPrompt: string;
   maxTokens?: number;
+  /** Enable Anthropic's built-in web search tool. Pass a max_uses cap to
+   *  control cost — Anthropic charges $10 per 1,000 searches on top of
+   *  token costs. Claude decides when to search; the tool calls run
+   *  server-side and the final assistant message still contains the
+   *  plain-text answer. */
+  webSearch?: { maxUses?: number };
 }
 
 export interface ThinkResult {
@@ -51,25 +57,40 @@ export interface ThinkResult {
   inputTokens: number;
   outputTokens: number;
   costEstimate: number;
+  /** Count of web searches the model performed, if webSearch was enabled. */
+  webSearchCount?: number;
 }
 
 export async function think(p: ThinkParams): Promise<ThinkResult> {
+  const tools = p.webSearch
+    ? [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: p.webSearch.maxUses ?? 10,
+        },
+      ]
+    : undefined;
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: p.maxTokens ?? 2000,
     system: p.systemPrompt,
     messages: [{ role: 'user', content: p.userPrompt }],
+    ...(tools ? { tools: tools as unknown as Anthropic.ToolUnion[] } : {}),
   });
   const text = res.content
     .filter((b: any) => b.type === 'text')
     .map((b: any) => b.text)
     .join('\n');
+  const webSearchCount = p.webSearch
+    ? res.content.filter((b: any) => b.type === 'server_tool_use').length
+    : undefined;
   const inputTokens = res.usage.input_tokens;
   const outputTokens = res.usage.output_tokens;
   const costEstimate =
     (inputTokens / 1_000_000) * PRICE_IN_PER_MTOK +
     (outputTokens / 1_000_000) * PRICE_OUT_PER_MTOK;
-  return { text, inputTokens, outputTokens, costEstimate };
+  return { text, inputTokens, outputTokens, costEstimate, webSearchCount };
 }
 
 // ---------------------------------------------------------------------------

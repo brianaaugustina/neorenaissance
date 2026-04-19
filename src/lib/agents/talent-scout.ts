@@ -205,6 +205,32 @@ Apply the Venn test in playbook §2 strictly. Only candidates that score
 based) may appear in the surfaced list. The playbook's past-guest list
 (§7) and declined list are hard blocks.
 
+# CRITICAL: verify every artisan via web search before surfacing
+
+You have the web_search tool available. Use it. Your training data is
+stale and making up artisans burns Briana's time and trust.
+
+For each candidate you consider:
+
+1. Web search their name + trade + "San Francisco" (or "West Oakland").
+   Confirm they exist, they're actually in SF/West Oakland, and their
+   work genuinely fits the Venn test.
+2. Find a current website, Instagram handle, OR recent press feature.
+   Do NOT compose URLs from training data — only use URLs that appear
+   in web_search results. If nothing returns a valid URL, set the
+   relevant field to null.
+3. Cross-check against the past-guest list (playbook §7) and declined
+   list before surfacing. A name match there = skip.
+4. The source_link field in your output MUST be a URL that appeared in
+   your web_search results AND is tied to this artisan's actual work
+   or press coverage. Never link to an aggregator, a generic SF craft
+   directory, or a URL you haven't confirmed via search.
+
+If you cannot verify a candidate exists in SF/West Oakland AND matches
+the trade description via web search, do not surface them. Prefer
+fewer surfaced candidates over fabricated ones. The spec's "surface
+fewer rather than pad" rule is non-negotiable here.
+
 # Output format (strict JSON, no commentary)
 
 Wrap in these markers:
@@ -225,7 +251,7 @@ Wrap in these markers:
       "passes_threshold": true | false (true ONLY if venn_test_result is 3-of-3),
       "fit_rationale": "one concrete sentence",
       "discovery_story": "how you found them — friend recommendation, shop visit, press feature, IG discovery, etc. Be specific",
-      "source_link": "URL to their work or a press feature, or null",
+      "source_link": "URL that appeared in your web_search results AND is tied to this artisan — website, IG profile URL, or press piece. NEVER a URL you didn't verify via search. Null if unverified.",
       "trade_gap_fill": true | false (true if they fill an OPEN trade category from playbook §9)
     }
   ]
@@ -264,6 +290,7 @@ export interface RunArtisanResearchResult {
   outputId: string;
   batch: ArtisanResearchBatch;
   contactsWritten: number;
+  webSearches: number;
   tokensUsed: number;
   costEstimate: number;
 }
@@ -330,10 +357,17 @@ the JSON wrapped between BEGIN_RESEARCH / END_RESEARCH markers.`;
       60000,
       Math.max(4000, requestedCount * perCandidateTokens),
     );
+    // Web search budget: ~3 searches per candidate (name+trade+SF; shop/website;
+    // press) with a 5-call floor for small runs and a 60-call ceiling to keep
+    // the per-run cost predictable (roughly $0.60 max at Anthropic's $10/1K
+    // rate). Claude decides whether to burn the full budget; it usually
+    // doesn't.
+    const webSearchBudget = Math.min(60, Math.max(5, requestedCount * 3));
     const result = await think({
       systemPrompt: system,
       userPrompt: user,
       maxTokens,
+      webSearch: { maxUses: webSearchBudget },
     });
 
     const rawJson =
@@ -464,7 +498,7 @@ the JSON wrapped between BEGIN_RESEARCH / END_RESEARCH markers.`;
       status: 'success',
       tokensUsed: result.inputTokens + result.outputTokens,
       model: MODEL,
-      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length} contacts_written=${contactsWritten}`,
+      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length} contacts_written=${contactsWritten} web_searches=${result.webSearchCount ?? 0}`,
       outputSummary: summary,
       approvalQueueId: queueId,
       costEstimate: Number(result.costEstimate.toFixed(4)),
@@ -476,6 +510,7 @@ the JSON wrapped between BEGIN_RESEARCH / END_RESEARCH markers.`;
       outputId,
       batch,
       contactsWritten,
+      webSearches: result.webSearchCount ?? 0,
       tokensUsed: result.inputTokens + result.outputTokens,
       costEstimate: result.costEstimate,
     };
@@ -866,6 +901,14 @@ Return exactly ONE new candidate that passes the 3-of-3 Venn test and
 addresses Briana's feedback (if any). Avoid every artisan on the "do not
 re-surface" list.
 
+# CRITICAL: verify the replacement via web search
+
+Use web_search. Do not fabricate artisans or URLs. Confirm the candidate
+exists, is in SF/West Oakland, and matches the trade description before
+returning. The source_link must be a URL from your search results tied
+to this artisan — never a URL composed from training data. If you can't
+verify, set source_link to null or return a different candidate.
+
 # Output format (strict JSON)
 
 <!-- BEGIN_REPLACEMENT -->
@@ -978,6 +1021,7 @@ Return the replacement JSON wrapped between BEGIN_REPLACEMENT / END_REPLACEMENT 
     systemPrompt: system,
     userPrompt: user,
     maxTokens: 1500,
+    webSearch: { maxUses: 8 },
   });
 
   const rawJson =

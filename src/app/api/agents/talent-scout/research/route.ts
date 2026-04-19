@@ -26,6 +26,7 @@ async function handle(req: Request) {
       reviewed: result.batch.total_reviewed,
       surfaced: result.batch.surfaced_count,
       contactsWritten: result.contactsWritten,
+      webSearches: result.webSearches,
       tokensUsed: result.tokensUsed,
       costEstimate: result.costEstimate,
     });
