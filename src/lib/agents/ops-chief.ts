@@ -5,6 +5,7 @@ import {
 import {
   getActiveIntentions,
   getActiveOutcomes,
+  getCompletedTasksSince,
   getInitiatives,
   getOpenSubtasksOfProjects,
   getOverdueTasks,
@@ -47,6 +48,15 @@ const VENTURE_DAYS: Record<number, string> = {
   6: 'Weekend — rest and reflection',
 };
 
+export interface DelegationHint {
+  task_id: string;
+  task_title: string;
+  candidate_agent: 'showrunner';
+  related_outputs: RecentAgentOutput[];
+  matched_keywords: string[];
+  episode_hint?: string;
+}
+
 export interface OpsChiefDailyContext {
   todayIso: string;
   dayLabel: string;
@@ -62,7 +72,103 @@ export interface OpsChiefDailyContext {
   recentAgentOutputs: RecentAgentOutput[];
   pendingQueueItems: any[];
   recentFeedback: RecentFeedbackItem[];
+  completedRecentTasks: Task[];
+  delegationHints: DelegationHint[];
   errors: Record<string, string>;
+}
+
+// Pure UTC-anchored weekday lookup for a bare YYYY-MM-DD string. Safe because
+// Notion date-only fields have no timezone, and we want the nominal weekday
+// regardless of the caller's local tz.
+const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const LONG_WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+function weekdayOfIso(iso: string, long = false): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  const idx = d.getUTCDay();
+  return (long ? LONG_WEEKDAYS : SHORT_WEEKDAYS)[idx];
+}
+function formatDateWithWeekday(iso: string): string {
+  return `${iso} (${weekdayOfIso(iso)})`;
+}
+
+// 14-day reference table. Claude uses this verbatim — no weekday inference.
+function buildDateTable(todayIso: string): string {
+  const lines: string[] = [];
+  for (let offset = -1; offset <= 13; offset++) {
+    const iso = addDaysIso(todayIso, offset);
+    const wd = weekdayOfIso(iso, true);
+    const label =
+      offset === -1 ? 'yesterday'
+      : offset === 0 ? 'TODAY'
+      : offset === 1 ? 'tomorrow'
+      : offset <= 6 ? 'this week'
+      : 'next week';
+    lines.push(`${wd} ${iso} — ${label}`);
+  }
+  return lines.join('\n');
+}
+
+// Lightweight heuristic to identify tasks that Showrunner could handle. The
+// briefing prompt uses these hints alongside recent Showrunner outputs to
+// decide readiness. We don't decide ready/blocked in code — that's Claude's
+// job with the full context.
+const SHOWRUNNER_KEYWORDS: Array<[string, string[]]> = [
+  ['social_caption', ['social', 'caption', 'reel', 'promo', 'tiktok', 'instagram']],
+  ['episode_metadata', ['episode title', 'youtube desc', 'spotify desc', 'youtube description', 'spotify description']],
+  ['substack_post', ['substack', 'newsletter', 'post draft', 'episode post']],
+  ['calendar_entry', ['schedule', 'content calendar']],
+];
+const EP_RE = /\b(?:ep(?:isode)?\.?\s*(\d{1,3}))\b/i;
+
+function detectDelegationHints(
+  tasks: Task[],
+  showrunnerOutputs: RecentAgentOutput[],
+): DelegationHint[] {
+  const hints: DelegationHint[] = [];
+  for (const t of tasks) {
+    const title = t.title.toLowerCase();
+    const matched: string[] = [];
+    const matchedTypes = new Set<string>();
+    for (const [outputType, keywords] of SHOWRUNNER_KEYWORDS) {
+      for (const kw of keywords) {
+        if (title.includes(kw)) {
+          matched.push(kw);
+          matchedTypes.add(outputType);
+        }
+      }
+    }
+    if (!matched.length) continue;
+
+    const epMatch = t.title.match(EP_RE);
+    const episodeHint = epMatch ? `ep${epMatch[1]}` : undefined;
+
+    const related = showrunnerOutputs.filter((o) => {
+      if (o.agent_id !== 'showrunner') return false;
+      if (!matchedTypes.has(o.output_type) && !matchedTypes.has('calendar_entry')) {
+        return false;
+      }
+      if (!episodeHint) return true;
+      return o.tags.some((tag) => tag.toLowerCase().includes(episodeHint));
+    });
+
+    hints.push({
+      task_id: t.id,
+      task_title: t.title,
+      candidate_agent: 'showrunner',
+      related_outputs: related,
+      matched_keywords: matched,
+      episode_hint: episodeHint,
+    });
+  }
+  return hints;
 }
 
 export interface DailyBriefingResult extends RunAgentResult<OpsChiefDailyContext> {
@@ -100,16 +206,19 @@ function outcomeNames(ids: string[], outcomes: Outcome[]): string[] {
 function renderTaskLine(t: Task, initiatives: Initiative[], outcomes: Outcome[]): string {
   const linkedOutcomes = outcomeNames(t.outcomeIds, outcomes);
   const venture = initiativeName(t.initiativeIds, initiatives);
-  const parts: string[] = [`- ${t.title}`];
+  const parts: string[] = [`- id=${t.id.slice(0, 8)} "${t.title}"`];
   parts.push(`[${t.type ?? 'Task'}]`);
   parts.push(`venture=${venture}`);
-  if (t.toDoDate) parts.push(`todo=${t.toDoDate}`);
+  if (t.toDoDate) parts.push(`todo=${formatDateWithWeekday(t.toDoDate)}`);
   if (t.datesEnd || t.datesStart) {
-    const deadline = t.datesEnd ?? t.datesStart;
-    const span = t.datesStart && t.datesEnd && t.datesStart !== t.datesEnd
-      ? `${t.datesStart}→${t.datesEnd}`
-      : deadline!;
-    parts.push(`deadline=${span}`);
+    if (t.datesStart && t.datesEnd && t.datesStart !== t.datesEnd) {
+      parts.push(
+        `deadline=${formatDateWithWeekday(t.datesStart)}→${formatDateWithWeekday(t.datesEnd)}`,
+      );
+    } else {
+      const deadline = (t.datesEnd ?? t.datesStart)!;
+      parts.push(`deadline=${formatDateWithWeekday(deadline)}`);
+    }
   }
   if (t.status) parts.push(`status=${t.status}`);
   if (linkedOutcomes.length) parts.push(`outcomes=[${linkedOutcomes.join(' | ')}]`);
@@ -330,11 +439,37 @@ ${recentFeedbackRendered}`
         .join('\n')
     : '';
 
-  return `Today is ${ctx.dayLabel}.
-Venture day guide: ${ctx.ventureDay}
+  const completedBlock = ctx.completedRecentTasks.length
+    ? ctx.completedRecentTasks
+        .map((t) => renderTaskLine(t, initiatives, outcomes))
+        .join('\n')
+    : '(nothing completed in the last 48 hours)';
 
-# URGENT PROJECTS (deadline within ${URGENT_WINDOW_DAYS} days)
-These override everything else. Every open subtask beneath them is priority.
+  const delegationBlock = ctx.delegationHints.length
+    ? ctx.delegationHints
+        .map((h) => {
+          const related = h.related_outputs.length
+            ? h.related_outputs
+                .map(
+                  (o) =>
+                    `    ↳ showrunner/${o.output_type} — ${o.approval_status} on ${o.created_at.slice(0, 10)}${o.tags.length ? ` [${o.tags.join(', ')}]` : ''}`,
+                )
+                .join('\n')
+            : '    ↳ (no related Showrunner outputs in the last 24h)';
+          return `- task_id=${h.task_id.slice(0, 8)} "${h.task_title}"
+    candidate_agent=${h.candidate_agent}  matched=[${h.matched_keywords.join(', ')}]${h.episode_hint ? `  episode_hint=${h.episode_hint}` : ''}
+${related}`;
+        })
+        .join('\n\n')
+    : '(no tasks on your list look delegable today)';
+
+  return `Venture day guide: ${ctx.ventureDay}
+
+# DATE REFERENCE (authoritative — never compute weekdays yourself)
+Use this table for every weekday/date you mention. All dates are Pacific Time.
+${buildDateTable(ctx.todayIso)}
+
+# URGENT PROJECTS (Date field within ${URGENT_WINDOW_DAYS} days — hard deadlines)
 ${urgentProjectBlock}
 
 # OPEN SUBTASKS UNDER URGENT PROJECTS
@@ -344,21 +479,119 @@ ${subtaskBlock}
 Open tasks whose To-Do Date has already passed.
 ${overdueBlock}
 
-# TODAY'S PLANNED TASKS (To-Do Date = ${ctx.todayIso})
+# TODAY'S PLANNED TASKS (To-Do Date = ${formatDateWithWeekday(ctx.todayIso)})
 ${todayBlock}
+
+# COMPLETED IN LAST 48 HOURS (Briana's recently-done tasks — use as context for delegation)
+${completedBlock}
+
+# CROSS-AGENT OUTPUTS + PENDING QUEUE (last 24 hours — informs delegation readiness)
+${renderAgentActivity(ctx)}
+
+# DELEGATION CANDIDATES (keyword-matched — decide readiness in JSON output)
+${delegationBlock}
 
 # ACTIVE OUTCOMES (reference only — inline mention when a task links to one)
 ${outcomesRef}
 
 # INITIATIVES ON FILE
 ${initiatives.map((i) => `- ${i.name} [${i.status ?? 'no status'}]`).join('\n') || '(none)'}
-
-# AGENT ACTIVITY (last 24 hours)
-${renderAgentActivity(ctx)}${feedbackBlock}
+${feedbackBlock}
 ${errorBlock}
 
-Now produce Briana's daily briefing following the format and prioritization
-rules in your system prompt. Lead with priority. Be brief and direct.`;
+Now produce the briefing per the playbook §1 spec. Output exactly:
+
+<Section 1: HTML body — no markdown syntax, use real <h2>, <h3>, <p>, <strong>, <ul>, <li> tags. Structure: generative opening → Top priorities → Also today → Heads up. Bold inline the task names and deadlines so a 5-second skim works. Do NOT restate the date — the card title carries it.>
+
+<!-- DELEGATIONS -->
+
+<Section 2: JSON array of delegation suggestions. Schema and ready/blocked semantics in playbook §1. Empty array [] if nothing is delegable.>`;
+}
+
+// ---------------------------------------------------------------------------
+// Briefing output parser — splits Claude's response into an HTML body and a
+// delegation suggestions JSON array. The prompt tells Claude to separate
+// them with a specific HTML comment marker.
+// ---------------------------------------------------------------------------
+export interface DelegationSuggestion {
+  task_title: string;
+  agent: string;
+  readiness: 'ready' | 'blocked';
+  blockers: string[];
+  chat_prompt: string;
+  task_id?: string;
+}
+
+export interface ParsedBriefing {
+  briefingHtml: string;
+  delegationSuggestions: DelegationSuggestion[];
+  rawOutput: string;
+}
+
+const DELEGATION_MARKER = '<!-- DELEGATIONS -->';
+
+export function parseBriefingOutput(text: string): ParsedBriefing {
+  const idx = text.indexOf(DELEGATION_MARKER);
+  let htmlPart = text;
+  let jsonPart = '';
+
+  if (idx >= 0) {
+    htmlPart = text.slice(0, idx);
+    jsonPart = text.slice(idx + DELEGATION_MARKER.length);
+  }
+
+  // Strip any leading/trailing code fence the model may have wrapped around
+  // the HTML (defensive — our prompt says not to, but Claude sometimes does).
+  const briefingHtml = htmlPart
+    .replace(/^\s*```(?:html)?\s*/, '')
+    .replace(/```\s*$/, '')
+    .trim();
+
+  let delegationSuggestions: DelegationSuggestion[] = [];
+  if (jsonPart.trim()) {
+    try {
+      const start = jsonPart.indexOf('[');
+      const end = jsonPart.lastIndexOf(']');
+      if (start >= 0 && end > start) {
+        const arr = JSON.parse(jsonPart.slice(start, end + 1));
+        if (Array.isArray(arr)) {
+          delegationSuggestions = arr
+            .filter((s: unknown): s is Record<string, unknown> => {
+              return !!s && typeof s === 'object';
+            })
+            .map((s) => ({
+              task_title: String(s.task_title ?? ''),
+              agent: String(s.agent ?? 'showrunner'),
+              readiness: (s.readiness === 'ready' ? 'ready' : 'blocked') as 'ready' | 'blocked',
+              blockers: Array.isArray(s.blockers)
+                ? (s.blockers as unknown[]).filter(
+                    (b): b is string => typeof b === 'string' && b.trim().length > 0,
+                  )
+                : [],
+              chat_prompt: String(s.chat_prompt ?? ''),
+              task_id: typeof s.task_id === 'string' ? s.task_id : undefined,
+            }))
+            .filter((s) => s.task_title.length > 0);
+        }
+      }
+    } catch (e) {
+      console.error('[ops-chief] delegation JSON parse failed:', e);
+    }
+  }
+
+  return { briefingHtml, delegationSuggestions, rawOutput: text };
+}
+
+// Extract a short plain-text summary from the HTML briefing body — used for
+// the queue card's collapsed summary line. Strips tags and pulls the first
+// non-header paragraph.
+export function extractOpeningSummary(html: string): string {
+  const stripped = html
+    .replace(/<h\d[^>]*>[\s\S]*?<\/h\d>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.slice(0, 240);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +721,8 @@ export async function runOpsChiefDailyBriefing(
             errors,
           )
         : [];
+      // 48h lookback for recently-completed Notion tasks.
+      const completedCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
       const [
         todaysTasks,
         overdueTasks,
@@ -498,6 +733,7 @@ export async function runOpsChiefDailyBriefing(
         recentAgentOutputs,
         pendingQueueItems,
         recentFeedback,
+        completedRecentTasks,
       ] = await Promise.all([
         safe('todaysTasks', () => getTodaysTasks(todayIso), [] as Task[], errors),
         safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
@@ -523,12 +759,24 @@ export async function runOpsChiefDailyBriefing(
           [] as RecentFeedbackItem[],
           errors,
         ),
+        safe(
+          'completedRecentTasks',
+          () => getCompletedTasksSince(completedCutoff),
+          [] as Task[],
+          errors,
+        ),
       ]);
       // Filter runs to last 24 hours
       const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const recentAgentRuns = recentRunsRaw.filter(
         (r: any) => r.started_at >= cutoff,
       );
+      // Detect delegation candidates from today's + overdue tasks. Keep it
+      // small (max 8) so the prompt stays scannable.
+      const delegationHints = detectDelegationHints(
+        [...todaysTasks, ...overdueTasks],
+        recentAgentOutputs,
+      ).slice(0, 8);
       return {
         todayIso,
         dayLabel,
@@ -544,11 +792,14 @@ export async function runOpsChiefDailyBriefing(
         recentAgentOutputs,
         pendingQueueItems,
         recentFeedback,
+        completedRecentTasks,
+        delegationHints,
         errors,
       };
     },
     summarizeContext: (ctx) =>
-      `today=${ctx.todayIso} urgent=${ctx.urgentProjects.length} urgent_subs=${ctx.urgentSubtasks.length} overdue=${ctx.overdueTasks.length} today_tasks=${ctx.todaysTasks.length} outcomes=${ctx.activeOutcomes.length} other_agent_outputs=${ctx.recentAgentOutputs.length} errors=${Object.keys(ctx.errors).length}`,
+      `today=${ctx.todayIso} urgent=${ctx.urgentProjects.length} urgent_subs=${ctx.urgentSubtasks.length} overdue=${ctx.overdueTasks.length} today_tasks=${ctx.todaysTasks.length} completed48h=${ctx.completedRecentTasks.length} delegation_hints=${ctx.delegationHints.length} other_agent_outputs=${ctx.recentAgentOutputs.length} errors=${Object.keys(ctx.errors).length}`,
+    maxTokens: 4000,
     buildPrompt: async (ctx) => {
       const memory = await loadOpsChiefMemory();
       const memoryBlock = renderMemoryBlock(memory);
@@ -565,27 +816,30 @@ export async function runOpsChiefDailyBriefing(
         user: buildUserPrompt(ctx),
       };
     },
-    buildDeposit: (ctx, r) => ({
-      type: 'briefing',
-      title: `Daily Briefing — ${ctx.dayLabel}`,
-      summary: r.text
-        .split('\n')
-        .find((l) => l.trim() && !l.startsWith('#'))
-        ?.slice(0, 240),
-      full_output: {
-        briefing_markdown: r.text,
-        venture_day: ctx.ventureDay,
-        context: {
-          today_iso: ctx.todayIso,
-          urgent_projects: ctx.urgentProjects.length,
-          urgent_subtasks: ctx.urgentSubtasks.length,
-          overdue_tasks: ctx.overdueTasks.length,
-          today_task_count: ctx.todaysTasks.length,
-          active_outcomes: ctx.activeOutcomes.length,
-          errors: ctx.errors,
+    buildDeposit: (ctx, r) => {
+      const parsed = parseBriefingOutput(r.text);
+      return {
+        type: 'briefing',
+        title: `Daily Briefing — ${ctx.dayLabel}`,
+        summary: extractOpeningSummary(parsed.briefingHtml),
+        full_output: {
+          briefing_html: parsed.briefingHtml,
+          delegation_suggestions: parsed.delegationSuggestions,
+          venture_day: ctx.ventureDay,
+          context: {
+            today_iso: ctx.todayIso,
+            urgent_projects: ctx.urgentProjects.length,
+            urgent_subtasks: ctx.urgentSubtasks.length,
+            overdue_tasks: ctx.overdueTasks.length,
+            today_task_count: ctx.todaysTasks.length,
+            completed_48h: ctx.completedRecentTasks.length,
+            delegation_hints: ctx.delegationHints.length,
+            active_outcomes: ctx.activeOutcomes.length,
+            errors: ctx.errors,
+          },
         },
-      },
-    }),
+      };
+    },
     output: {
       venture: 'cross',
       outputType: 'daily_briefing',
