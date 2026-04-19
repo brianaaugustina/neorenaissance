@@ -27,13 +27,22 @@ export default async function Home() {
             })}
           </p>
         </div>
-        <Link
-          href="/agents"
-          className="px-4 py-2 text-sm rounded-lg border transition hover:bg-white/5"
-          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
-        >
-          Agents →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/outputs"
+            className="px-4 py-2 text-sm rounded-lg border transition hover:bg-white/5"
+            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+          >
+            Outputs
+          </Link>
+          <Link
+            href="/agents"
+            className="px-4 py-2 text-sm rounded-lg border transition hover:bg-white/5"
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+          >
+            Agents →
+          </Link>
+        </div>
       </header>
 
       {errorEntries.length > 0 && (

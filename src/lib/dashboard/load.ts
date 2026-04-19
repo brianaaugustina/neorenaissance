@@ -9,6 +9,39 @@ import {
 import { getChatHistory, getQueueItems, getRecentAgentRuns } from '../supabase/client';
 import { todayIsoPT } from '../time';
 
+// Queue-scope rule per the dashboard spec: an item belongs in the queue iff
+// it needs review or approval, OR it's approved but has downstream actions
+// still pending. Once fully resolved, items leave the queue and persist in
+// the /outputs page only.
+//
+// Resolution rules per type:
+//   - Showrunner draft: resolved when approved AND every clip has
+//     scheduled_at (or no clips exist). While any clip is unscheduled the
+//     approved parent stays in the queue so the Schedule buttons are
+//     reachable.
+//   - Ops Chief briefing: resolved on approve (no downstream).
+//   - Weekly plan (type='recommendation'): stays visible after approve
+//     because executing the plan is a downstream action — already handled
+//     by the existing approvedRecs branch.
+//   - Sponsorship / PR pitch draft: resolved on approve (Gate 3 Send is
+//     not wired yet; when it lands, "Sent" becomes the terminal state).
+//   - Research batch (type='report' with leads[]): resolved on approve of
+//     the batch item OR when every lead has approved=true or skipped=true.
+export function isApprovedWithDownstream(item: {
+  agent_name?: string;
+  type?: string;
+  full_output?: unknown;
+}): boolean {
+  if (item.agent_name === 'showrunner' && item.type === 'draft') {
+    interface Caption { scheduled_at?: unknown }
+    const fo = (item.full_output ?? {}) as { clip_captions?: Caption[] };
+    const captions = Array.isArray(fo.clip_captions) ? fo.clip_captions : [];
+    if (captions.length === 0) return false;
+    return captions.some((c) => !c.scheduled_at);
+  }
+  return false;
+}
+
 export interface ChatMessageView {
   id: string;
   role: 'user' | 'assistant';
@@ -115,12 +148,18 @@ export async function loadDashboardData(): Promise<DashboardData> {
     return when && when.slice(0, 10) === todayIso;
   });
 
-  // Include approved recommendations (e.g., weekly plans awaiting execution)
-  const approvedRecs = await safe(
-    'approvedRecs',
+  // Queue inclusion: (a) pending items, (b) approved items that still have
+  // downstream work pending (weekly plan awaiting Execute; Showrunner draft
+  // awaiting per-clip Schedule). Superseded and fully-resolved items stay
+  // out of the queue — they live on /outputs.
+  const approvedWithDownstream = await safe(
+    'approvedWithDownstream',
     async () => {
-      const items = await getQueueItems('approved', 10);
-      return items.filter((i: any) => i.type === 'recommendation');
+      const items = await getQueueItems('approved', 30);
+      return items.filter(
+        (i: any) =>
+          i.type === 'recommendation' || isApprovedWithDownstream(i),
+      );
     },
     [] as any[],
     errors,
@@ -134,7 +173,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     overdueTasks,
     weekTasks,
     initiatives,
-    pendingQueue: [...pendingQueue, ...approvedRecs],
+    pendingQueue: [...pendingQueue, ...approvedWithDownstream],
     completedToday,
     chatHistory,
     agentRuns: recentAgentRuns,

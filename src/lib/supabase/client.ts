@@ -146,6 +146,130 @@ export async function getRecentFeedback(
 }
 
 // ============================================================
+// Outputs page — persistent history across every agent output
+// ============================================================
+export interface OutputsFilter {
+  agentId?: string;
+  outputType?: string;
+  approvalStatus?: string;
+  sinceIso?: string; // YYYY-MM-DD lower bound on created_at
+  untilIso?: string; // YYYY-MM-DD upper bound (inclusive)
+  limit?: number;
+  offset?: number;
+}
+
+export interface OutputsListRow {
+  id: string;
+  agent_id: string;
+  venture: string;
+  output_type: string;
+  approval_status: string;
+  approval_queue_id: string | null;
+  run_id: string | null;
+  parent_output_id: string | null;
+  tags: string[];
+  created_at: string;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  summary_preview: string;
+}
+
+export async function listOutputs(
+  filter: OutputsFilter = {},
+): Promise<OutputsListRow[]> {
+  const q = supabaseAdmin()
+    .from('agent_outputs')
+    .select(
+      'id, agent_id, venture, output_type, approval_status, approval_queue_id, run_id, parent_output_id, tags, created_at, approved_at, rejection_reason, draft_content, final_content',
+    )
+    .order('created_at', { ascending: false })
+    .limit(filter.limit ?? 50)
+    .range(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 50) - 1);
+  if (filter.agentId) q.eq('agent_id', filter.agentId);
+  if (filter.outputType) q.eq('output_type', filter.outputType);
+  if (filter.approvalStatus) q.eq('approval_status', filter.approvalStatus);
+  if (filter.sinceIso) q.gte('created_at', `${filter.sinceIso}T00:00:00Z`);
+  if (filter.untilIso) q.lte('created_at', `${filter.untilIso}T23:59:59Z`);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: any) => {
+    const content = r.final_content ?? r.draft_content ?? {};
+    return {
+      id: r.id,
+      agent_id: r.agent_id,
+      venture: r.venture,
+      output_type: r.output_type,
+      approval_status: r.approval_status,
+      approval_queue_id: r.approval_queue_id,
+      run_id: r.run_id,
+      parent_output_id: r.parent_output_id,
+      tags: r.tags ?? [],
+      created_at: r.created_at,
+      approved_at: r.approved_at,
+      rejection_reason: r.rejection_reason,
+      summary_preview: summarizeOutputContent(r.output_type, content),
+    };
+  });
+}
+
+function summarizeOutputContent(type: string, c: Record<string, unknown>): string {
+  const pick = (key: string): string =>
+    typeof c[key] === 'string' ? (c[key] as string).slice(0, 160) : '';
+  switch (type) {
+    case 'daily_briefing':
+      return pick('briefing_html') || pick('briefing_markdown') || '';
+    case 'weekly_plan':
+      return pick('weekly_summary') || pick('plan_markdown').slice(0, 160);
+    case 'substack_post':
+      return pick('substack_title') || pick('episode_title') || '';
+    case 'episode_metadata':
+      return pick('youtube_title') || pick('spotify_title') || '';
+    case 'social_caption':
+      return pick('caption');
+    case 'calendar_entry':
+      return pick('episode_title') || pick('kind');
+    case 'pipeline_check':
+      return `items=${Array.isArray(c.items) ? (c.items as unknown[]).length : 0}`;
+    case 'pitch_email':
+    case 'press_pitch_founder_first':
+    case 'press_pitch_show_first':
+    case 'press_pitch_hybrid':
+      return pick('subject');
+    case 'research_batch':
+    case 'press_research':
+      return `reviewed=${(c as { total_reviewed?: number }).total_reviewed ?? 0}, surfaced=${(c as { surfaced_count?: number }).surfaced_count ?? 0}`;
+    case 'editorial_landscape_briefing':
+      return pick('month_label');
+    default:
+      return '';
+  }
+}
+
+export async function listOutputsFacets(): Promise<{
+  agentIds: string[];
+  outputTypes: string[];
+}> {
+  // Pull distinct agent_id / output_type values for the filter dropdowns.
+  // Tiny table today; a DISTINCT query is cheap.
+  const { data } = await supabaseAdmin()
+    .from('agent_outputs')
+    .select('agent_id, output_type')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  const agents = new Set<string>();
+  const types = new Set<string>();
+  for (const r of data ?? []) {
+    const row = r as { agent_id: string; output_type: string };
+    agents.add(row.agent_id);
+    types.add(row.output_type);
+  }
+  return {
+    agentIds: [...agents].sort(),
+    outputTypes: [...types].sort(),
+  };
+}
+
+// ============================================================
 // Permanent preferences — long-term behavioral rules
 // Stored as agent_memory with key='permanent_preferences' (array of strings).
 // Back-compat reads from legacy key 'feedback_rules' and merges.
