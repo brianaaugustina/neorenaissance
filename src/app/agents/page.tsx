@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { RunOpsChiefButton } from '@/components/RunOpsChiefButton';
+import { RunSponsorshipResearchButton } from '@/components/RunSponsorshipResearchButton';
 import { ShowrunnerInput } from '@/components/ShowrunnerInput';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,25 @@ export default function AgentsPage() {
             episodes take guest info and a timestamped outline.
           </p>
           <ShowrunnerInput />
+        </section>
+
+        {/* Sponsorship Director */}
+        <section className="card p-5 md:p-6">
+          <div className="flex items-baseline justify-between gap-4 mb-3">
+            <h2 className="serif text-xl">Sponsorship Director</h2>
+            <span className="muted text-xs uppercase tracking-widest">
+              The Trades Show · Live
+            </span>
+          </div>
+          <p className="muted text-sm mb-4">
+            Weekly sponsor research and pitch drafting. The Mon 8am PT cron
+            surfaces 10 leads scored against the 5-point fit test. Approve a
+            lead in the queue and a Touch 1 pitch drafts automatically, with a
+            matching Outreach row in Notion. Trigger off-cycle below when you
+            want fresh leads now. Gmail send is not yet wired — Gate 3 is
+            manual until OAuth lands.
+          </p>
+          <RunSponsorshipResearchButton />
         </section>
       </div>
     </main>
