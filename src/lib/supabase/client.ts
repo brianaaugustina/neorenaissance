@@ -16,7 +16,16 @@ export function supabaseAdmin(): SupabaseClient {
 // Approval queue
 // ============================================================
 export type QueueType = 'draft' | 'task_creation' | 'recommendation' | 'report' | 'analytics' | 'briefing';
-export type QueueStatus = 'pending' | 'approved' | 'rejected' | 'deferred' | 'executed';
+export type QueueStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'deferred'
+  | 'executed'
+  /** Replaced by a newer run triggered from the Update button. Old draft
+   *  stays in agent_outputs for audit; the queue card shows a 'superseded
+   *  → see new draft' badge instead of approval controls. */
+  | 'superseded';
 
 export interface DepositParams {
   agent_name: string;

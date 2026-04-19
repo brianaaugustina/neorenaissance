@@ -227,6 +227,71 @@ function renderFeedbackForPrompt(items: RecentFeedbackItem[]): string {
   return `\n\n# RECENT FEEDBACK (last 14 days)\nBriana's corrections on past Showrunner drafts. Apply to this run; don't repeat the same choices.\n${body}`;
 }
 
+// Scope of an Update feedback pass. Determines which sub-outputs Claude
+// regenerates vs preserves byte-identical from the prior run.
+export type ShowrunnerUpdateScope =
+  | 'social_captions'
+  | 'episode_metadata'
+  | 'substack_post'
+  | 'all';
+
+export interface ShowrunnerUpdateContext {
+  feedback: string;
+  scope?: ShowrunnerUpdateScope; // if omitted, agent infers from feedback text
+  preserved: Partial<ParsedShowrunnerOutput>; // prior run's outputs to pass through
+}
+
+function renderUpdateBlock(ctx: ShowrunnerUpdateContext): string {
+  const p = ctx.preserved;
+  const scopeLine = ctx.scope
+    ? `Scope (explicit): ${ctx.scope}`
+    : `Scope: INFER from the feedback text. If the feedback names hashtags, captions, or clips → social_captions only. If it names title, description, YouTube, Spotify → episode_metadata only. If it names the post, newsletter, Substack body → substack_post only. If it's stylistic and clearly applies across → all.`;
+
+  const priorSections: string[] = [];
+  if (p.substackTitle)
+    priorSections.push(`### PRIOR SUBSTACK TITLE\n${p.substackTitle}`);
+  if (p.substackSubtitle)
+    priorSections.push(`### PRIOR SUBSTACK SUBTITLE\n${p.substackSubtitle}`);
+  if (p.youtubeTitle)
+    priorSections.push(`### PRIOR YOUTUBE TITLE\n${p.youtubeTitle}`);
+  if (p.spotifyTitle)
+    priorSections.push(`### PRIOR SPOTIFY TITLE\n${p.spotifyTitle}`);
+  if (p.episodeDescription)
+    priorSections.push(`### PRIOR EPISODE DESCRIPTION\n${p.episodeDescription}`);
+  if (p.substackPost)
+    priorSections.push(`### PRIOR SUBSTACK POST\n${p.substackPost}`);
+  if (p.clipCaptions?.length)
+    priorSections.push(
+      `### PRIOR CLIP CAPTIONS\n` +
+        p.clipCaptions
+          .map(
+            (c, i) =>
+              `Clip ${i + 1}: ${c.caption}\nhashtags: ${(c.hashtags ?? []).join(' ')}`,
+          )
+          .join('\n\n'),
+    );
+
+  return `\n\n---\n\n# UPDATE PASS — regenerate scoped to this feedback only
+
+Briana hit Update with this feedback:
+"""
+${ctx.feedback}
+"""
+
+${scopeLine}
+
+# RULES for this Update pass
+1. Identify which sub-output the feedback applies to (or all if it's clearly stylistic).
+2. For the in-scope sub-output: regenerate fully, applying the feedback as a hard constraint.
+3. For out-of-scope sub-outputs: emit the PRIOR version BYTE-IDENTICAL. Do not rephrase, re-order, or "improve" them — just copy them through unchanged. Byte-identical means character-for-character the same.
+4. The parser still expects every section (YOUTUBE TITLE, SPOTIFY TITLE, EPISODE DESCRIPTION, SUBSTACK TITLE, SUBSTACK SUBTITLE, CLIP N CAPTION, SUBSTACK POST, CONTENT PILLAR, SUGGESTED POST DATE). Emit all of them, preserved or regenerated per scope.
+5. CONTENT PILLAR and SUGGESTED POST DATE are metadata — preserve unless the feedback specifically targets them.
+
+# PRIOR OUTPUTS (copy these through verbatim unless they're in scope)
+
+${priorSections.join('\n\n')}`;
+}
+
 // ---------------------------------------------------------------------------
 // Run Showrunner
 // ---------------------------------------------------------------------------
@@ -239,6 +304,10 @@ export async function runShowrunner(
     guestLinks?: string;
     timestampedOutline?: string;
     trigger?: 'manual' | 'cron' | 'chat';
+    /** Present when this run was triggered from the Update button. The agent
+     *  applies the feedback scoped to the relevant sub-output and preserves
+     *  other sub-outputs byte-identical. */
+    updateContext?: ShowrunnerUpdateContext;
   },
 ): Promise<ShowrunnerResult> {
   const clips = params.clips ?? [];
@@ -246,6 +315,7 @@ export async function runShowrunner(
   const guestName = (params.guestName ?? '').trim();
   const guestLinks = (params.guestLinks ?? '').trim();
   const timestampedOutline = (params.timestampedOutline ?? '').trim();
+  const updateContext = params.updateContext;
   let parsed: ParsedShowrunnerOutput | null = null;
 
   const result = await runAgent<ShowrunnerContext>({
@@ -414,6 +484,13 @@ ${clipInstructions}` +
         ? `# TIMESTAMPED OUTLINE (use verbatim in "In this episode" section)\n${ctx.timestampedOutline}\n\n`
         : `# TIMESTAMPED OUTLINE\n(none provided — generate 10-20 chapter markers from the transcript in "MM:SS Title" format)\n\n`;
 
+      // Update context — present when this run was triggered from the Update
+      // button. Gives Claude the prior outputs + the new feedback so it can
+      // regenerate only the affected sub-output and emit the rest verbatim.
+      const updateBlock = updateContext
+        ? renderUpdateBlock(updateContext)
+        : '';
+
       const user =
         `Episode type: ${ctx.episodeType}\n` +
         `Word count: ${ctx.transcriptWordCount}\n` +
@@ -423,6 +500,7 @@ ${clipInstructions}` +
         `# TRANSCRIPT\n\n${ctx.transcript}\n\n` +
         `# CLIPS\n${clipsBlock}` +
         feedbackBlock +
+        updateBlock +
         `\n\nProduce all outputs following the format in your system prompt. For the YOUTUBE DESCRIPTION, follow the template in the pipeline workflow exactly — including emoji spacing, line breaks, and the fixed "Where to find The Trades Show" and "Where to find your host, Briana" blocks.`;
 
       return { system, user };
@@ -594,6 +672,36 @@ export async function executeShowrunnerDraft(
   // Substack post is a single decision, not per-clip.
 
   return result;
+}
+
+// Hydrate a stored full_output back into the ParsedShowrunnerOutput shape so
+// runShowrunner's updateContext can reference it for byte-identical preserve
+// passes. v2 fields preferred, v1 mirrors as fallback.
+export function extractShowrunnerPreserved(
+  fullOutput: Record<string, unknown>,
+): Partial<ParsedShowrunnerOutput> {
+  const str = (k: string): string | undefined => {
+    const v = fullOutput[k];
+    return typeof v === 'string' ? v : undefined;
+  };
+  const clipCaptions = Array.isArray(fullOutput.clip_captions)
+    ? (fullOutput.clip_captions as ClipCaption[])
+    : [];
+  const contentPillars = Array.isArray(fullOutput.content_pillars)
+    ? (fullOutput.content_pillars as string[])
+    : undefined;
+  return {
+    substackTitle: str('substack_title') ?? str('episode_title'),
+    substackSubtitle: str('substack_subtitle'),
+    substackPost: str('substack_post') ?? str('post_draft'),
+    youtubeTitle: str('youtube_title') ?? str('episode_title'),
+    spotifyTitle: str('spotify_title'),
+    episodeDescription:
+      str('episode_description') ?? str('youtube_description'),
+    clipCaptions,
+    contentPillars,
+    suggestedPostDate: str('suggested_post_date'),
+  };
 }
 
 // Extract the original inputs from a Showrunner queue item's full_output so
