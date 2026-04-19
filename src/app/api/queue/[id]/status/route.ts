@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   bulkUpdateOutputsByRunId,
+  computeEditDiff,
   logOutput,
   updateOutputStatus,
 } from '@/lib/agent-outputs';
@@ -84,12 +85,36 @@ export async function POST(
       item.agent_output_id
     ) {
       try {
+        // Edit diff capture — fetch the original draft_content and compute
+        // the field-level diff vs what's being approved. Foundation for the
+        // Supervisor's future "you keep editing X — promote to permanent?"
+        // prompt. When diff is non-null, store the agent_output status as
+        // 'edited' (preserves approval_queue.status='approved' unchanged).
+        let editDiff: Record<string, unknown> | undefined;
+        let outputStatus: 'approved' | 'rejected' | 'edited' = status;
+        if (status === 'approved' && effectiveFullOutput) {
+          const { data: agentOutput } = await supabaseAdmin()
+            .from('agent_outputs')
+            .select('draft_content')
+            .eq('id', item.agent_output_id)
+            .single();
+          const draft = (agentOutput?.draft_content ?? {}) as Record<string, unknown>;
+          const diff = computeEditDiff(
+            draft,
+            effectiveFullOutput as Record<string, unknown>,
+          );
+          if (diff) {
+            editDiff = diff as unknown as Record<string, unknown>;
+            outputStatus = 'edited';
+          }
+        }
         await updateOutputStatus({
           outputId: item.agent_output_id,
-          status,
+          status: outputStatus,
           finalContent:
             status === 'approved' ? (effectiveFullOutput ?? {}) : undefined,
           rejectionReason: status === 'rejected' ? feedback : undefined,
+          editDiff,
         });
         if (item.run_id) {
           await bulkUpdateOutputsByRunId(

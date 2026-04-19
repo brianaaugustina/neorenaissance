@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import DOMPurify from 'isomorphic-dompurify';
+import { computeReadiness } from '@/lib/dashboard/readiness';
 
 interface DelegationSuggestion {
   task_title: string;
@@ -282,6 +283,31 @@ export function QueueCard({ item }: QueueCardProps) {
           <h3 className="serif text-lg">{item.title}</h3>
         </div>
       </div>
+
+      {/* Readiness line — Blocked vs Ready state per item type. Renders
+          above the summary so the most important context lands first. */}
+      {!isSuperseded && (() => {
+        const readiness = computeReadiness(item);
+        if (!readiness) return null;
+        const color =
+          readiness.kind === 'ready'
+            ? 'var(--ok)'
+            : readiness.kind === 'blocked'
+              ? 'var(--gold-dim)'
+              : 'var(--muted)';
+        return (
+          <div className="mb-2 text-xs" style={{ color }}>
+            {readiness.message}
+            {readiness.blockers && readiness.blockers.length > 0 && (
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                {readiness.blockers.map((b, i) => (
+                  <li key={i}>{b}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
 
       {item.summary && !expanded && (
         <p className="muted text-sm mb-3 line-clamp-2">{item.summary}</p>
