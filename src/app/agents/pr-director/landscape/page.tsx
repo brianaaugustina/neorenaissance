@@ -63,14 +63,19 @@ export default async function LandscapePage() {
       {history.length > 1 && (
         <section className="mt-8">
           <h2 className="serif text-lg mb-3">History</h2>
-          <ul className="space-y-2 text-sm">
+          <ul className="space-y-1 text-sm">
             {history.slice(1).map((h) => (
               <li
                 key={h.id}
-                className="flex justify-between gap-4 border-b pb-2"
+                className="flex justify-between gap-4 border-b py-2"
                 style={{ borderColor: 'var(--border)' }}
               >
-                <span>{h.month_label}</span>
+                <Link
+                  href={`/agents/pr-director/landscape/${h.id}`}
+                  className="hover:underline"
+                >
+                  {h.month_label}
+                </Link>
                 <span className="muted text-xs">{h.date}</span>
               </li>
             ))}

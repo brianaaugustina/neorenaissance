@@ -409,6 +409,28 @@ export async function getLatestLandscapeBriefing(): Promise<
   return { id: row.id, created_at: row.created_at, briefing: content };
 }
 
+export async function getLandscapeBriefingById(
+  id: string,
+): Promise<
+  | { id: string; created_at: string; briefing: LandscapeBriefing }
+  | null
+> {
+  const { data, error } = await supabaseAdmin()
+    .from('agent_outputs')
+    .select('id, created_at, draft_content, final_content, agent_id, output_type')
+    .eq('id', id)
+    .single();
+  if (error || !data) return null;
+  if (
+    data.agent_id !== 'pr-director' ||
+    data.output_type !== 'editorial_landscape_briefing'
+  ) {
+    return null;
+  }
+  const content = (data.final_content ?? data.draft_content) as LandscapeBriefing;
+  return { id: data.id, created_at: data.created_at, briefing: content };
+}
+
 export async function listRecentLandscapeBriefings(
   limit = 12,
 ): Promise<
