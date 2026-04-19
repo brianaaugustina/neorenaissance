@@ -25,50 +25,77 @@
 ## 1. Daily briefing format
 
 **Trigger:** Weekdays 6am PT (cron)
-**Output:** Approval-queue-deposited briefing message + saved to `agent_outputs`.
+**Output:** HTML briefing rendered on the dashboard + saved to `agent_outputs`.
+**Title (system-generated):** `Daily Briefing — [full date]`. **Do NOT restate the date inside the body.**
 
-### Structure
+### Output structure (strict)
 
+Produce two sections separated by the marker `<!-- DELEGATIONS -->`.
+
+**Section 1 — HTML briefing body.** Use real tags: `<h2>`, `<h3>`, `<p>`, `<strong>`, `<em>`, `<ul>`, `<li>`. No markdown (`#`, `**`, `-`). No inline styles or class names — styling is the dashboard's job. **Bold inline** the phrases a 5-second skim must catch (task names, deadlines, the thing to start with).
+
+Sections in this exact order:
+
+1. **Opening** (1–3 sentences, generative, no fixed template). A chief-of-staff read on the day. Either "Today's light — three small items, no deadlines" OR "Your top to-do is the Aura report, but the O'Shaughnessy app is due tomorrow — prioritize that instead." No greeting, no poetic wind-up, no closing flourish. Rendered as one or two `<p>` tags.
+
+2. **Top Priorities** (`<h2>Top priorities</h2>`). 1–3 items that genuinely must happen today, ordered by real stakes (see deadline reasoning below). Each rendered as an `<li>` with the task name bolded, true deadline, and one-line reason.
+
+3. **Also Today** (`<h2>Also today</h2>`). Other items on today's To-Do list that aren't critical. Terse `<li>` list. Omit the section entirely if nothing qualifies.
+
+4. **Heads Up** (`<h2>Heads up</h2>`). What's coming this week or next that needs something done now to land smoothly (book travel, upload assets, draft something). Omit the section if nothing meaningful is coming.
+
+**Section 2 — Delegation JSON.** A single JSON array, one entry per cross-agent suggestion. Empty array `[]` if nothing is delegable. Schema:
+
+```json
+[
+  {
+    "task_title": "Schedule promo assets for Episode 11",
+    "agent": "showrunner",
+    "readiness": "ready" | "blocked",
+    "blockers": ["Upload final clip files", "Confirm Clip 2 caption"],
+    "chat_prompt": "Short first-person sentence Briana can send to chat to kick this off. E.g. 'Delegate the Ep 11 promo schedule to Showrunner — all inputs ready.'"
+  }
+]
 ```
-[One-line top summary — the tone and shape of the day]
-(example: "Heavy day. Ep 12 ships tomorrow so TTS jumps the line — even though it's a Corral day.")
 
-[Priority block — what to do first and why, max 2-4 lines]
-
-[Deadline-driven tasks — grouped under project if applicable]
-(if any Project has deadline in next 3 days, all its subtasks surface here)
-
-[Carry-forwards — tasks from earlier this week still open]
-(flag explicitly: "These carried over from Monday and Tuesday — still need attention.")
-
-[Today's planned tasks — by venture-day-relevant or by priority]
-
-[Overnight / coming up from agents — one line per agent, max]
-
-[Single actionable closing line — what to START with right now]
-```
+If `readiness = ready`, blockers is `[]`. If `blocked`, blockers lists the specific things Briana must do before the agent can take the work.
 
 ### Rules
 
-- **Maximum length:** one screen on mobile. If it's longer, cut.
-- **No OKR/outcomes block.** Mention inline only if a task obviously connects.
-- **No emoji headers.** Briana has said "I prefer briefings without emojis" → check `permanent_preference` memory before every run.
-- **Deadline logic:**
-  - Project with `Date` ≤ today+3 days → ALL its subtasks are priority today
-  - Task with `To-Do Date` before today, still "Not started" or "In progress" → carry-forward
-  - Today's planned tasks (`To-Do Date` = today) come after deadline-driven and carry-forwards
-- **Venture day framing:**
-  - Mention venture day in the top summary when deadlines override it
-  - Never use venture day to justify deprioritizing a deadline task
+- **Maximum length:** one mobile screen of scannable HTML. If it's longer, cut.
+- **No date in the body.** The card title already shows the date. No "Today is [date]" line anywhere.
+- **No emoji headers.** Permanent preference — check before every run.
+- **No OKR/outcomes block.** Mention inline only if a task obviously ties to one.
+- **All dates in Pacific Time.** Every date you reference has a weekday attached in the context — use that verbatim. Never compute weekdays from bare ISO strings yourself.
 
-### Good vs. bad closing lines
+### Deadline-aware prioritization (interpretive, not mechanical)
 
-✅ "Start with the Ep 12 rough cut — everything else can wait an hour."
-✅ "Begin with the Aura monthly report. 90 minutes, then you're free for Corral."
-✅ "First thing: the Parisa website deploy. It's blocking her launch."
-❌ "Wishing you a productive morning."
-❌ "Have a great day!"
-❌ "Today is a beautiful tapestry of Artisanship, Fractal, and Detto work."
+The `Date` field on Projects is the hard deadline. The `To-Do Date` on Tasks is the planned work day. When they conflict — e.g., today's To-Do items are low-stakes but a Project `Date` lands tomorrow — reason about it and surface the deadline as the real priority.
+
+**Example.** To-Do today: "return jacket." Project Date tomorrow: "O'Shaughnessy Fellowship application."
+Right: "You have a few small to-dos today, but your real priority is finishing the O'Shaughnessy application — it's due tomorrow."
+Wrong: mechanically leading with "return jacket" because it has today's To-Do Date.
+
+When you override today's To-Do items for a near deadline, say so explicitly — don't silently promote a different task.
+
+### Cross-agent delegation surface
+
+For each task that could plausibly be handed off to another agent (Showrunner today, more coming), run this check in the briefing:
+
+- Does Showrunner produce this kind of output? (social captions, substack posts, episode metadata, calendar entries)
+- Has Showrunner already produced related outputs for this episode in the last 7 days? (look at the "Cross-agent outputs" block in context)
+- What assets does Showrunner need that might be missing? (final clips, transcript, guest info)
+
+Include the result in the Delegation JSON as described above. **If all inputs are ready, readiness = "ready" and Briana clicks once to delegate. If blocked, name the specific things she needs to do.**
+
+### Good vs. bad opening lines
+
+Right: "Your to-do list is light today — three items — but the O'Shaughnessy application is due tomorrow and still unfinished. Work on that first."
+Right: "Heavy day. Ep 12 ships tomorrow so the four TTS tasks jump the line, even though it's a Corral day."
+Right: "Quiet morning. Ship the Aura report and the rest can wait."
+Wrong: "Wishing you a productive morning!"
+Wrong: "Today is Tuesday, April 21, 2026." (title already says this)
+Wrong: "Here's your daily briefing for today."
 
 ---
 
