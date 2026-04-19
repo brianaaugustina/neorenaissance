@@ -22,6 +22,7 @@ import {
   logRunComplete,
   logRunStart,
   saveChatMessage,
+  supabaseAdmin,
 } from '../supabase/client';
 import { todayIsoPT } from '../time';
 import { loadContextFile } from './base';
@@ -283,6 +284,38 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['query'],
     },
   },
+  {
+    name: 'delegate_to_showrunner',
+    description:
+      'Route a task to Showrunner. Use when Briana confirms a delegation suggestion surfaced in a daily briefing (button prefills chat, she approves). Two paths: (a) readiness=ready — verify the Showrunner package is already in the approval queue and return its title so you can tell her where to look. (b) readiness=blocked — create one Notion task per blocker so she can track what she owes Showrunner. Never call this for tasks Briana did not delegate; always let her confirm first.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_title: {
+          type: 'string',
+          description: 'Short description of the task being delegated, for logging and reply context. e.g. "Schedule Ep 11 promo assets".',
+        },
+        readiness: {
+          type: 'string',
+          enum: ['ready', 'blocked'],
+          description:
+            '"ready" = Showrunner has already produced the relevant output (e.g. captions drafted) and it is sitting in the approval queue. "blocked" = Briana still needs to provide inputs (clips, transcript, etc.) before Showrunner can do its job.',
+        },
+        episode_hint: {
+          type: 'string',
+          description:
+            'Optional episode identifier like "ep11" or "episode 11" used to find the matching Showrunner output. Omit if not referring to a specific episode.',
+        },
+        blockers: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Required when readiness=blocked. One entry per thing Briana needs to do. Each becomes a Notion task typed as "Tasks" with today\'s To-Do Date. e.g. ["Upload Ep 11 final clip files", "Finalize Clip 2 caption"].',
+        },
+      },
+      required: ['task_title', 'readiness'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -426,6 +459,124 @@ async function handleTool(
       const results = await searchOutreach(String(input.query ?? ''));
       return { count: results.length, results: results.map((r) => ({ id: r.id, title: r.title, status: r.status })) };
     }
+    case 'delegate_to_showrunner': {
+      const taskTitle = String(input.task_title ?? '').trim();
+      const readiness = input.readiness === 'ready' ? 'ready' : 'blocked';
+      const episodeHint = typeof input.episode_hint === 'string'
+        ? input.episode_hint.toLowerCase().replace(/\s+/g, '')
+        : undefined;
+
+      if (readiness === 'ready') {
+        // Find the most recent pending Showrunner parent output, optionally
+        // narrowed by episode tag. Return enough for Ops Chief to cite the
+        // queue item without guessing.
+        const q = supabaseAdmin()
+          .from('agent_outputs')
+          .select('id, output_type, tags, approval_queue_id, approval_status, created_at, draft_content')
+          .eq('agent_id', 'showrunner')
+          .eq('venture', 'trades-show')
+          .is('parent_output_id', null)
+          .eq('approval_status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(10);
+        const { data, error } = await q;
+        if (error) {
+          return { ok: false, error: error.message };
+        }
+        const rows = (data ?? []) as Array<{
+          id: string;
+          output_type: string;
+          tags: string[];
+          approval_queue_id: string | null;
+          approval_status: string;
+          created_at: string;
+          draft_content: Record<string, unknown> | null;
+        }>;
+
+        const match = episodeHint
+          ? rows.find((r) =>
+              (r.tags ?? []).some((t) => t.toLowerCase().replace(/\s+/g, '').includes(episodeHint)),
+            ) ?? rows[0]
+          : rows[0];
+
+        if (!match) {
+          return {
+            ok: false,
+            readiness,
+            message:
+              'No pending Showrunner package found in the approval queue. Showrunner may not have drafted this episode yet — check the ShowrunnerInput card on the dashboard.',
+          };
+        }
+
+        const queueTitle =
+          (match.draft_content && typeof match.draft_content === 'object'
+            ? (match.draft_content as any).episode_title
+            : undefined) ?? 'Showrunner content package';
+
+        return {
+          ok: true,
+          readiness,
+          action: 'surface_queue_item',
+          queue_item: {
+            agent_output_id: match.id,
+            approval_queue_id: match.approval_queue_id,
+            title: queueTitle,
+            output_type: match.output_type,
+            created_at: match.created_at,
+            tags: match.tags,
+          },
+          task_delegated: taskTitle,
+        };
+      }
+
+      // readiness === 'blocked' — create one Notion task per blocker.
+      const blockers = Array.isArray(input.blockers)
+        ? (input.blockers as unknown[]).filter(
+            (b): b is string => typeof b === 'string' && b.trim().length > 0,
+          )
+        : [];
+      if (!blockers.length) {
+        return {
+          ok: false,
+          error: 'readiness=blocked requires at least one blocker string.',
+        };
+      }
+
+      // Route created tasks to Artisanship / The Trades Show when present.
+      const ttsInitiative = ctx.initiatives.find((i) =>
+        i.name.toLowerCase().includes('trades show'),
+      );
+      const todayIso = todayIsoPT();
+
+      const created: { task_id: string; title: string }[] = [];
+      const failures: { title: string; error: string }[] = [];
+      for (const b of blockers) {
+        try {
+          const id = await createTask({
+            title: b,
+            type: 'Tasks',
+            toDoDate: todayIso,
+            initiativeId: ttsInitiative?.id,
+            status: 'Not started',
+            source: 'Claude',
+          });
+          created.push({ task_id: id, title: b });
+        } catch (e) {
+          failures.push({ title: b, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      return {
+        ok: created.length > 0,
+        readiness,
+        action: 'created_blocker_tasks',
+        task_delegated: taskTitle,
+        created,
+        failures,
+        note:
+          'These were created as today\'s tasks under The Trades Show initiative. Once Briana completes them, re-run the delegation — Showrunner will then have what it needs.',
+      };
+    }
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -539,6 +690,19 @@ Rules:
 - You have read-only access to Notes, Content, Companies, Contacts, and
   Outreach databases via search tools. Use these when the user asks about
   notes, content, contacts, companies, or outreach.
+- For \`delegate_to_showrunner\`: only call this when the user explicitly
+  confirms a delegation — usually when the chat input was prefilled from a
+  delegation suggestion in the daily briefing and she hits Send, or when
+  she clearly says "yes, delegate" / "route this to Showrunner". Pass the
+  readiness and blockers from the briefing context verbatim; don't guess
+  them. If she only asked about delegation without confirming, answer her
+  question first — don't act.
+- After a successful \`delegate_to_showrunner\` call:
+  - ready path → point her at the queue item by title, one sentence.
+    ("Yes — the Ep 11 package is in your queue as [title]. Approve it there.")
+  - blocked path → list the Notion tasks you just created, one sentence.
+    ("Added to today: [task 1], [task 2]. Once you're done, Showrunner can
+    pick it up.") Don't lecture or recap.
 `;
 }
 
