@@ -15,6 +15,14 @@
     {
       "path": "/api/agents/sponsorship-director/research",
       "schedule": "0 15 * * 1"
+    },
+    {
+      "path": "/api/agents/pr-director/landscape",
+      "schedule": "0 14 1 * *"
+    },
+    {
+      "path": "/api/agents/pr-director/research",
+      "schedule": "0 14 * * 1"
     }
   ]
 }

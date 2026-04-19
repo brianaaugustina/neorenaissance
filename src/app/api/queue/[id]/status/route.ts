@@ -4,6 +4,7 @@ import {
   logOutput,
   updateOutputStatus,
 } from '@/lib/agent-outputs';
+import { onPressPitchApproval } from '@/lib/agents/pr-director';
 import { executeShowrunnerDraft } from '@/lib/agents/showrunner';
 import { onPitchApproval } from '@/lib/agents/sponsorship-director';
 import {
@@ -121,6 +122,26 @@ export async function POST(
         });
       } catch (notionErr) {
         console.error('Sponsorship onPitchApproval failed:', notionErr);
+      }
+
+      // PR Director — Gate 2: same Notion mirror pattern for press pitches.
+      // No-op when the queue item is a Sponsorship pitch or any other type.
+      try {
+        const finalBody =
+          status === 'approved' &&
+          effectiveFullOutput &&
+          typeof effectiveFullOutput === 'object' &&
+          typeof (effectiveFullOutput as Record<string, unknown>).body === 'string'
+            ? ((effectiveFullOutput as Record<string, unknown>).body as string)
+            : undefined;
+        await onPressPitchApproval({
+          queueItemAgentOutputId: item.agent_output_id,
+          status,
+          feedback,
+          finalBody,
+        });
+      } catch (notionErr) {
+        console.error('PR onPressPitchApproval failed:', notionErr);
       }
     }
 
