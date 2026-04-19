@@ -678,6 +678,107 @@ export async function updateOutreachRow(
   await notion.pages.update({ page_id: pageId, properties: properties as any });
 }
 
+// ---------------------------------------------------------------------------
+// Talent Scout — Contacts DB append-only writes for artisan candidates.
+// Per the spec, Contacts DB rows are frozen at creation: we write once at
+// research time and never update. Status lives on the Outreach DB instead.
+// ---------------------------------------------------------------------------
+
+export type ContactType =
+  | 'Podcast Guest'
+  | 'Partner'
+  | 'Customer'
+  | 'Network';
+
+export type ContactConnectionStatus =
+  | 'Need to Reach Out'
+  | 'Cold'
+  | 'Warm'
+  | 'Waiting'
+  | 'In Contact'
+  | 'Discovery Call'
+  | 'Follow-up'
+  | 'Connected'
+  | 'Need to Schedule'
+  | 'Active Client/Guest'
+  | 'Past Client/Guest'
+  | 'Hold/Passed';
+
+export interface CreateContactRowParams {
+  name: string;
+  type?: ContactType[];
+  connectionStatus?: ContactConnectionStatus;
+  email?: string;
+  social?: string; // URL — typically IG profile
+  phone?: string;
+  address?: string;
+  city?:
+    | 'San Francisco'
+    | 'New York'
+    | 'PNW'
+    | 'Austin'
+    | 'Sheffield UK'
+    | 'UK'
+    | 'Oakland'
+    | 'Hudson NY'
+    | 'Portland';
+  industry?: string[]; // multi-select values from the Industry options
+  role?: string[]; // multi-select values from the Role options
+  notes?: string;
+}
+
+export async function createContactRow(
+  params: CreateContactRowParams,
+): Promise<string> {
+  const contactsDbId = env.notion.contactsDbId;
+  if (!contactsDbId) throw new Error('NOTION_CONTACTS_DB_ID not set');
+  const dsId = await resolveDataSourceId(contactsDbId);
+
+  const properties: Record<string, unknown> = {
+    Name: { title: [{ type: 'text', text: { content: params.name } }] },
+  };
+  if (params.type?.length) {
+    properties['Type'] = {
+      multi_select: params.type.map((name) => ({ name })),
+    };
+  }
+  if (params.connectionStatus) {
+    properties['Connection Status'] = {
+      status: { name: params.connectionStatus },
+    };
+  }
+  if (params.email) properties['Email'] = { email: params.email };
+  if (params.social) properties['Social'] = { url: params.social };
+  if (params.phone) properties['Phone'] = { phone_number: params.phone };
+  if (params.address) {
+    properties['Address'] = {
+      rich_text: [{ type: 'text', text: { content: params.address } }],
+    };
+  }
+  if (params.city) properties['City'] = { select: { name: params.city } };
+  if (params.industry?.length) {
+    properties['Industry'] = {
+      multi_select: params.industry.map((name) => ({ name })),
+    };
+  }
+  if (params.role?.length) {
+    properties['Role'] = {
+      multi_select: params.role.map((name) => ({ name })),
+    };
+  }
+  if (params.notes) {
+    properties['Notes'] = {
+      rich_text: [{ type: 'text', text: { content: params.notes } }],
+    };
+  }
+
+  const res: any = await notion.pages.create({
+    parent: { type: 'data_source_id', data_source_id: dsId } as any,
+    properties: properties as any,
+  });
+  return res.id as string;
+}
+
 // Fetches currently-active Outreach rows for a given venture + outreach type.
 // Used during research batch generation to dedupe: don't re-surface a brand
 // already in the pipeline.
