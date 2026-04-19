@@ -811,11 +811,70 @@ export interface CreateContentParams {
   platforms?: string[];
   caption?: string;
   contentPillar?: string[];
+  /** YYYY-MM-DD for date-only, or ISO datetime if you want to include time inline. */
   publishDate?: string;
+  /** HH:mm (24-hour). If provided with a YYYY-MM-DD publishDate, combined into
+   *  a timezone-aware ISO datetime before sending to Notion. Ignored when
+   *  publishDate already carries a time component. */
+  publishTime?: string;
+  /** IANA tz name for the publishTime. Defaults to America/Los_Angeles. */
+  publishTimezone?: string;
   ventureIds?: string[];
   // file_upload ids from uploadFileToNotion, attached to the Files property.
   fileUploadIds?: string[];
   filesPropertyName?: string; // Defaults to 'Files'; override if DB names it differently.
+}
+
+// Combine a YYYY-MM-DD publishDate with an optional HH:mm publishTime into an
+// ISO datetime string with the appropriate timezone offset. Notion's date
+// property accepts either a bare YYYY-MM-DD (date-only) or a full ISO datetime
+// with timezone; when time is supplied we send the latter.
+function combinePublishDateTime(
+  date: string,
+  time: string | undefined,
+  tz: string,
+): string {
+  if (!time) return date;
+  // If caller already passed a datetime, trust it.
+  if (date.length > 10) return date;
+  // Compute the offset for the given date in the given tz. The TZ component
+  // changes with DST so we can't hardcode -07:00 / -08:00.
+  const iso = `${date}T${time.length === 5 ? time + ':00' : time}`;
+  const offset = computeTimezoneOffset(new Date(iso + 'Z'), tz);
+  return `${iso}${offset}`;
+}
+
+function computeTimezoneOffset(d: Date, tz: string): string {
+  // Format the date in the target timezone as YYYY-MM-DDTHH:mm:ss, then parse
+  // back as UTC and diff with the original to derive the offset. Standard trick.
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = fmt.formatToParts(d).reduce<Record<string, string>>((acc, p) => {
+    if (p.type !== 'literal') acc[p.type] = p.value;
+    return acc;
+  }, {});
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour === '24' ? '00' : parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  const offsetMinutes = (asUtc - d.getTime()) / 60000;
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMinutes);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return `${sign}${hh}:${mm}`;
 }
 
 export async function createContentEntry(params: CreateContentParams): Promise<string> {
@@ -840,7 +899,17 @@ export async function createContentEntry(params: CreateContentParams): Promise<s
     properties['Content Pillar'] = { multi_select: params.contentPillar.map((name) => ({ name })) };
   }
   if (params.publishDate) {
-    properties.Time = { date: { start: params.publishDate } };
+    const start = combinePublishDateTime(
+      params.publishDate,
+      params.publishTime,
+      params.publishTimezone ?? 'America/Los_Angeles',
+    );
+    properties.Time = {
+      date: {
+        start,
+        time_zone: params.publishTime ? (params.publishTimezone ?? 'America/Los_Angeles') : null,
+      },
+    };
   }
   if (params.ventureIds?.length) {
     properties.Ventures = { relation: params.ventureIds.map((id) => ({ id })) };

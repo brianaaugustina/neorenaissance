@@ -586,24 +586,12 @@ export async function executeShowrunnerDraft(
     }
   }
 
-  for (const clip of clipCaptions) {
-    try {
-      const id = await createContentEntry({
-        name: `${episodeTitle} — Clip ${clip.index}`,
-        status: clip.fileUploadId ? '✅ Done' : undefined,
-        contentType: ['Reel'],
-        platforms: clip.platforms ?? DEFAULT_SOCIAL_PLATFORMS,
-        caption: [clip.caption, clip.hashtags?.join(' ')].filter(Boolean).join('\n\n'),
-        contentPillar: contentPillars,
-        publishDate: clip.publishDate,
-        ventureIds: [TTS_VENTURE_ID],
-        fileUploadIds: clip.fileUploadId ? [clip.fileUploadId] : undefined,
-      });
-      result.clipIds.push({ index: clip.index, contentEntryId: id });
-    } catch (e) {
-      result.errors.push(`Clip ${clip.index}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
+  // v2: clip Content DB rows are NOT created on approve anymore. Each clip
+  // gets a per-clip Schedule button on the dashboard; when Briana schedules
+  // one, the showrunner scheduling route uploads the file from Supabase
+  // Storage → Notion and creates the Content DB row with date + time.
+  // The Newsletter still creates on approve (above) because scheduling a
+  // Substack post is a single decision, not per-clip.
 
   return result;
 }
