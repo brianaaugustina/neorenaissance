@@ -5,6 +5,7 @@ import {
   updateOutputStatus,
 } from '@/lib/agent-outputs';
 import { executeShowrunnerDraft } from '@/lib/agents/showrunner';
+import { onPitchApproval } from '@/lib/agents/sponsorship-director';
 import {
   getPermanentPreferences,
   setPermanentPreferences,
@@ -71,6 +72,28 @@ export async function POST(
         }
       } catch (outputErr) {
         console.error('Failed to sync agent_outputs:', outputErr);
+      }
+
+      // Sponsorship Director — Gate 2: mirror approve/reject into the Notion
+      // Outreach row's Status (Approved on approve, Pass on reject). No-op
+      // for non-pitch items. Intentionally after the agent_outputs sync so
+      // Supabase stays the source of truth even if Notion fails.
+      try {
+        const finalBody =
+          status === 'approved' &&
+          item.full_output &&
+          typeof item.full_output === 'object' &&
+          typeof (item.full_output as Record<string, unknown>).body === 'string'
+            ? ((item.full_output as Record<string, unknown>).body as string)
+            : undefined;
+        await onPitchApproval({
+          queueItemAgentOutputId: item.agent_output_id,
+          status,
+          feedback,
+          finalBody,
+        });
+      } catch (notionErr) {
+        console.error('Sponsorship onPitchApproval failed:', notionErr);
       }
     }
 
