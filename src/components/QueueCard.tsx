@@ -12,6 +12,30 @@ interface DelegationSuggestion {
   chat_prompt: string;
 }
 
+interface ResearchLead {
+  lead_id: string;
+  brand_name: string;
+  tier: 'tier-a' | 'tier-b' | 'tier-c';
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_role: string | null;
+  contact_flag: 'unverified-contact' | 'no-named-contact' | null;
+  fit_score: number;
+  fit_rationale: string;
+  suggested_episode: string | null;
+  source_note: string | null;
+  approved?: boolean;
+  draft_output_id?: string | null;
+  outreach_row_id?: string | null;
+}
+
+interface ResearchBatchPayload {
+  total_reviewed?: number;
+  surfaced_count?: number;
+  season?: string;
+  leads?: ResearchLead[];
+}
+
 interface QueueCardProps {
   item: {
     id: string;
@@ -40,10 +64,41 @@ export function QueueCard({ item }: QueueCardProps) {
   const delegationSuggestions = (item.full_output?.delegation_suggestions ?? []) as DelegationSuggestion[];
   const showrunner = item.full_output?.post_draft ? item.full_output : null;
   const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
+  const researchBatch =
+    item.agent_name === 'sponsorship-director' && Array.isArray(item.full_output?.leads)
+      ? (item.full_output as ResearchBatchPayload)
+      : null;
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
-  const hasExpandable = !!(hasBriefing || showrunner || weeklyPlan);
+  const [leadMutations, setLeadMutations] = useState<Record<string, 'pending' | 'done' | 'error'>>({});
+  const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
+  const hasExpandable = !!(hasBriefing || showrunner || weeklyPlan || researchBatch);
   const isApprovedPlan = weeklyPlan && item.status === 'approved';
+
+  const approveLead = (leadId: string) => {
+    setLeadErrors((prev) => ({ ...prev, [leadId]: '' }));
+    setLeadMutations((prev) => ({ ...prev, [leadId]: 'pending' }));
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/sponsorship-director/leads/approve`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ queueItemId: item.id, leadId }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Lead approval failed');
+        setLeadMutations((prev) => ({ ...prev, [leadId]: 'done' }));
+        router.refresh(); // pull the new pitch draft into the queue
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed';
+        setLeadMutations((prev) => ({ ...prev, [leadId]: 'error' }));
+        setLeadErrors((prev) => ({ ...prev, [leadId]: msg }));
+      }
+    });
+  };
 
   const act = (status: 'approved' | 'rejected') => {
     setError(null);
@@ -253,6 +308,81 @@ export function QueueCard({ item }: QueueCardProps) {
         </div>
       )}
 
+      {/* Sponsorship research batch */}
+      {expanded && researchBatch && (
+        <div className="mb-3 space-y-3">
+          <div className="text-xs muted">
+            Reviewed {researchBatch.total_reviewed ?? 0}, surfacing{' '}
+            {researchBatch.leads?.length ?? 0}
+            {researchBatch.season ? ` · ${researchBatch.season}` : ''}
+          </div>
+          <ol className="space-y-3">
+            {(researchBatch.leads ?? []).map((lead) => {
+              const mutation = leadMutations[lead.lead_id];
+              const isDone = lead.approved || mutation === 'done';
+              const isLoading = mutation === 'pending';
+              return (
+                <li
+                  key={lead.lead_id}
+                  className="border rounded-md p-3 text-sm"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="serif text-base">{lead.brand_name}</span>
+                        <span className="text-xs muted">
+                          {lead.tier} · fit {lead.fit_score}/5
+                        </span>
+                      </div>
+                      <div className="text-xs muted mt-0.5">
+                        {lead.contact_name
+                          ? `${lead.contact_name}${lead.contact_role ? ` · ${lead.contact_role}` : ''}${lead.contact_email ? ` · ${lead.contact_email}` : ''}`
+                          : lead.contact_flag === 'no-named-contact'
+                            ? 'no named contact found — agent flagged for manual research'
+                            : 'contact unverified'}
+                      </div>
+                      <p className="mt-1.5">{lead.fit_rationale}</p>
+                      {lead.suggested_episode && (
+                        <p className="text-xs muted mt-1">
+                          pair with · {lead.suggested_episode}
+                        </p>
+                      )}
+                      {lead.source_note && (
+                        <p className="text-xs muted mt-0.5">source · {lead.source_note}</p>
+                      )}
+                      {leadErrors[lead.lead_id] && (
+                        <p
+                          className="text-xs mt-1"
+                          style={{ color: 'var(--danger)' }}
+                        >
+                          {leadErrors[lead.lead_id]}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => approveLead(lead.lead_id)}
+                      disabled={isDone || isLoading}
+                      className="shrink-0 px-3 py-1.5 text-xs rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[36px]"
+                      style={{
+                        borderColor: isDone ? 'var(--gold-dim)' : 'var(--gold)',
+                        color: isDone ? 'var(--muted)' : 'var(--gold)',
+                      }}
+                    >
+                      {isDone
+                        ? 'Draft queued'
+                        : isLoading
+                          ? 'Drafting…'
+                          : 'Approve lead'}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+
       {/* Weekly plan */}
       {expanded && weeklyPlan && (
         <div className="mb-3">
@@ -325,7 +455,9 @@ export function QueueCard({ item }: QueueCardProps) {
               ? 'Read full briefing'
               : weeklyPlan
                 ? 'View weekly plan'
-                : 'View content package'}
+                : researchBatch
+                  ? `Review ${researchBatch.leads?.length ?? 0} leads`
+                  : 'View content package'}
         </button>
       )}
 
