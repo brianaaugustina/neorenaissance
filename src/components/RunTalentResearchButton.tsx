@@ -4,14 +4,11 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 const DEFAULT_COUNT = 8;
-const MIN_COUNT = 3;
-const MAX_COUNT = 15;
 
 export function RunTalentResearchButton() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  // Store as string so the user can freely edit (including intermediate
-  // empty / out-of-range values while typing). Clamp only on blur / submit.
+  // Raw string while typing. Parsed (but not clamped) at submit time.
   const [countText, setCountText] = useState(String(DEFAULT_COUNT));
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{
@@ -20,23 +17,16 @@ export function RunTalentResearchButton() {
     contactsWritten: number;
   } | null>(null);
 
-  const clampAndNormalize = (raw: string): number => {
+  const normalize = (raw: string): number => {
     const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n)) return DEFAULT_COUNT;
-    return Math.min(MAX_COUNT, Math.max(MIN_COUNT, n));
-  };
-
-  const handleBlur = () => {
-    // Snap the displayed value to the clamped one when focus leaves.
-    setCountText(String(clampAndNormalize(countText)));
+    if (!Number.isFinite(n) || n <= 0) return DEFAULT_COUNT;
+    return n;
   };
 
   const run = () => {
     setError(null);
     setLastResult(null);
-    const count = clampAndNormalize(countText);
-    // Reflect the normalized value back into the field so the user sees
-    // what actually got sent.
+    const count = normalize(countText);
     setCountText(String(count));
     startTransition(async () => {
       try {
@@ -65,13 +55,11 @@ export function RunTalentResearchButton() {
         <label className="text-xs muted">Count</label>
         <input
           type="number"
-          min={MIN_COUNT}
-          max={MAX_COUNT}
+          min={1}
           value={countText}
           onChange={(e) => setCountText(e.target.value)}
-          onBlur={handleBlur}
           disabled={isPending}
-          className="w-16 bg-transparent border rounded-md px-2 py-1 text-sm"
+          className="w-20 bg-transparent border rounded-md px-2 py-1 text-sm"
           style={{ borderColor: 'var(--border)' }}
         />
         <button

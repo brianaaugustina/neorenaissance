@@ -271,7 +271,12 @@ export interface RunArtisanResearchResult {
 export async function runArtisanResearch(
   params: RunArtisanResearchParams = {},
 ): Promise<RunArtisanResearchResult> {
-  const requestedCount = Math.min(Math.max(params.requestedCount ?? 8, 3), 15);
+  // No clamping — Briana sets the count freely. Only guard against non-
+  // positive / non-finite inputs by falling back to the default.
+  const requestedCount =
+    Number.isFinite(params.requestedCount) && (params.requestedCount ?? 0) > 0
+      ? Math.floor(params.requestedCount as number)
+      : 8;
   const trigger = params.trigger ?? 'manual';
   const run = await logRunStart(AGENT_NAME, trigger);
   try {
@@ -317,10 +322,18 @@ Produce ${requestedCount} fresh artisan candidates (approximately; under-surface
 if the Venn test bar eliminates too many). Only 3-of-3 Venn candidates. Return
 the JSON wrapped between BEGIN_RESEARCH / END_RESEARCH markers.`;
 
+    // Scale output budget with requested count. Each candidate runs ~500-600
+    // JSON tokens, so we reserve 700/each with a 4K floor for small runs and
+    // a 60K ceiling (Sonnet 4.5 caps around 64K output).
+    const perCandidateTokens = 700;
+    const maxTokens = Math.min(
+      60000,
+      Math.max(4000, requestedCount * perCandidateTokens),
+    );
     const result = await think({
       systemPrompt: system,
       userPrompt: user,
-      maxTokens: 8000,
+      maxTokens,
     });
 
     const rawJson =
