@@ -2,6 +2,15 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import DOMPurify from 'isomorphic-dompurify';
+
+interface DelegationSuggestion {
+  task_title: string;
+  agent: string;
+  readiness: 'ready' | 'blocked';
+  blockers: string[];
+  chat_prompt: string;
+}
 
 interface QueueCardProps {
   item: {
@@ -25,12 +34,15 @@ export function QueueCard({ item }: QueueCardProps) {
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const briefing = item.full_output?.briefing_markdown as string | undefined;
+  const briefingHtml = item.full_output?.briefing_html as string | undefined;
+  const briefingLegacyMarkdown = item.full_output?.briefing_markdown as string | undefined;
+  const hasBriefing = !!(briefingHtml || briefingLegacyMarkdown);
+  const delegationSuggestions = (item.full_output?.delegation_suggestions ?? []) as DelegationSuggestion[];
   const showrunner = item.full_output?.post_draft ? item.full_output : null;
   const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
-  const hasExpandable = !!(briefing || showrunner || weeklyPlan);
+  const hasExpandable = !!(hasBriefing || showrunner || weeklyPlan);
   const isApprovedPlan = weeklyPlan && item.status === 'approved';
 
   const act = (status: 'approved' | 'rejected') => {
@@ -113,10 +125,73 @@ export function QueueCard({ item }: QueueCardProps) {
         <p className="muted text-sm mb-3 line-clamp-2">{item.summary}</p>
       )}
 
-      {/* Ops Chief briefing */}
-      {expanded && briefing && (
+      {/* Ops Chief briefing — new HTML path with delegation action surface */}
+      {expanded && briefingHtml && (
+        <>
+          <div
+            className="briefing-body prose prose-invert prose-sm max-w-none mb-3 text-sm"
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(briefingHtml) }}
+          />
+          {delegationSuggestions.length > 0 && (
+            <div className="mt-3 mb-3 space-y-2">
+              <div className="text-xs muted uppercase tracking-wider mb-2">
+                Delegation suggestions
+              </div>
+              {delegationSuggestions.map((s, i) => (
+                <div
+                  key={i}
+                  className="border rounded-md p-3 text-sm"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <div className="min-w-0">
+                      <div className="serif">{s.task_title}</div>
+                      <div className="text-xs muted mt-0.5">
+                        {s.agent} ·{' '}
+                        <span
+                          style={{
+                            color:
+                              s.readiness === 'ready'
+                                ? 'var(--gold)'
+                                : 'var(--muted)',
+                          }}
+                        >
+                          {s.readiness === 'ready' ? 'All inputs ready' : 'Blocked'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('ops-chief:prefill', {
+                            detail: { text: s.chat_prompt },
+                          }),
+                        );
+                      }}
+                      className="shrink-0 px-3 py-1.5 text-xs rounded-md border hover:bg-white/5 transition min-h-[36px]"
+                      style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+                    >
+                      Delegate to {s.agent}
+                    </button>
+                  </div>
+                  {s.readiness === 'blocked' && s.blockers.length > 0 && (
+                    <ul className="list-disc list-inside text-xs muted mt-2 space-y-0.5">
+                      {s.blockers.map((b, j) => (
+                        <li key={j}>{b}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Back-compat: old briefings stored as markdown */}
+      {expanded && !briefingHtml && briefingLegacyMarkdown && (
         <div className="prose prose-invert prose-sm max-w-none mb-3 whitespace-pre-wrap text-sm">
-          {briefing}
+          {briefingLegacyMarkdown}
         </div>
       )}
 
@@ -246,7 +321,7 @@ export function QueueCard({ item }: QueueCardProps) {
         >
           {expanded
             ? 'Collapse'
-            : briefing
+            : hasBriefing
               ? 'Read full briefing'
               : weeklyPlan
                 ? 'View weekly plan'

@@ -27,12 +27,32 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Listen for delegation-triggered prefill events fired by QueueCard.
+  // Fills the textarea with a suggested prompt so Briana can review, edit,
+  // and send — rather than blindly auto-submitting on her behalf.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ text?: string }>;
+      const text = ce.detail?.text;
+      if (!text) return;
+      setInput(text);
+      // Defer focus so the textarea sees the new value first.
+      queueMicrotask(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    };
+    window.addEventListener('ops-chief:prefill', handler);
+    return () => window.removeEventListener('ops-chief:prefill', handler);
+  }, []);
 
   const send = () => {
     const text = input.trim();
@@ -134,6 +154,7 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
 
       <div className="flex items-end gap-2">
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKey}

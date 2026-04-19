@@ -59,3 +59,54 @@ h1, h2, h3, .serif {
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+/* Ops Chief daily briefing — HTML rendered via dangerouslySetInnerHTML.
+   Tailwind v4 doesn't have the typography plugin here, so we style the
+   briefing body explicitly. Scannable hierarchy, no bullets on purpose
+   inside headers. */
+.briefing-body p {
+  margin: 0.5rem 0;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+.briefing-body h1,
+.briefing-body h2,
+.briefing-body h3 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 500;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+.briefing-body h2 {
+  font-size: 1.05rem;
+  margin: 1.1rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.briefing-body h3 {
+  font-size: 0.95rem;
+  margin: 0.75rem 0 0.25rem;
+  color: var(--gold);
+}
+.briefing-body strong {
+  color: var(--gold);
+  font-weight: 600;
+}
+.briefing-body em { color: var(--muted); font-style: italic; }
+.briefing-body ul, .briefing-body ol {
+  padding-left: 1.1rem;
+  margin: 0.4rem 0;
+}
+.briefing-body ul { list-style: disc; }
+.briefing-body ol { list-style: decimal; }
+.briefing-body li {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+.briefing-body a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.briefing-body > :first-child { margin-top: 0; }
+.briefing-body > :last-child { margin-bottom: 0; }
