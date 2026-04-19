@@ -107,6 +107,14 @@ export interface PressResearchBatch {
     fit_score: number;
     skip_reason: string;
   }>;
+  // Diagnostic fields — populated when parse fails so we can see why the run
+  // surfaced nothing without a DB round-trip.
+  parse_diagnostic?: {
+    raw_output_length: number;
+    raw_output_snippet: string;
+    likely_truncated: boolean;
+    reason: 'parse_failed' | 'empty_reviewed_array' | null;
+  } | null;
 }
 
 export interface PressPitchDraft {
@@ -438,7 +446,7 @@ Candidates scoring below 3/5 MUST NOT appear in the surfaced list.
 <!-- END_RESEARCH -->
 
 # Rules
-- Return 15-30 candidates total across all tiers. The code will cap the
+- Return 15-20 candidates total across all tiers. The code will cap the
   surfaced list at 10 and use your count as the "reviewed" total.
 - Never include a journalist in the conflicts list.
 - Never include an outlet already in the active pipeline below.
@@ -522,12 +530,19 @@ END_RESEARCH markers.`;
     const result = await think({
       systemPrompt: system,
       userPrompt: user,
-      maxTokens: 7000,
+      maxTokens: 12000,
     });
 
     const rawJson =
       extractJsonBlock(result.text, '<!-- BEGIN_RESEARCH -->', '<!-- END_RESEARCH -->') ??
       result.text;
+
+    const parseFailed =
+      !extractJsonBlock(result.text, '<!-- BEGIN_RESEARCH -->', '<!-- END_RESEARCH -->');
+    const likelyTruncated =
+      result.outputTokens >= 11500 || // hit max_tokens cap, probably truncated
+      !result.text.trim().endsWith('-->') || // no closing END_RESEARCH marker
+      !result.text.includes('<!-- END_RESEARCH -->');
     type Reviewed = {
       journalist_name: string;
       outlet: string;
@@ -590,6 +605,28 @@ END_RESEARCH markers.`;
         skip_reason: r.fit_rationale ?? '(no reason given)',
       }));
 
+    const shouldDiagnose = surfaced.length === 0;
+    const parseDiagnostic = shouldDiagnose
+      ? {
+          raw_output_length: result.text.length,
+          raw_output_snippet: result.text.slice(0, 1000),
+          likely_truncated: likelyTruncated,
+          reason: parseFailed
+            ? ('parse_failed' as const)
+            : ('empty_reviewed_array' as const),
+        }
+      : null;
+
+    if (shouldDiagnose) {
+      console.warn('[pr-director] press_research surfaced 0 leads:', {
+        rawLength: result.text.length,
+        outputTokens: result.outputTokens,
+        parseFailed,
+        likelyTruncated,
+        snippet: result.text.slice(0, 400),
+      });
+    }
+
     const batch: PressResearchBatch = {
       total_reviewed: reviewed.length,
       surfaced_count: surfaced.length,
@@ -598,12 +635,15 @@ END_RESEARCH markers.`;
       landscape_briefing_date: landscape?.briefing.date ?? null,
       leads: surfaced,
       candidates_not_surfaced: notSurfaced,
+      parse_diagnostic: parseDiagnostic,
     };
 
     const summary =
       surfaced.length > 0
         ? `Reviewed ${reviewed.length}, surfacing ${surfaced.length}${landscape ? ` (landscape ${landscape.briefing.date})` : ''}`
-        : `Reviewed ${reviewed.length}, nothing passed fit threshold`;
+        : parseFailed
+          ? `Parse failed (${result.text.length} chars, ${likelyTruncated ? 'likely truncated' : 'structure mismatch'}) — see diagnostic`
+          : `Reviewed ${reviewed.length}, nothing passed fit threshold`;
 
     const outputId = await logOutput({
       agentId: 'pr-director',

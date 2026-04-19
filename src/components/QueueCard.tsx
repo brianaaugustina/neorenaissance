@@ -52,6 +52,12 @@ interface ResearchBatchPayload {
   season?: string;
   landscape_briefing_date?: string | null;
   leads?: ResearchLead[];
+  parse_diagnostic?: {
+    raw_output_length: number;
+    raw_output_snippet: string;
+    likely_truncated: boolean;
+    reason: 'parse_failed' | 'empty_reviewed_array' | null;
+  } | null;
 }
 
 interface LeadPreviousVersion {
@@ -422,6 +428,34 @@ export function QueueCard({ item }: QueueCardProps) {
               ? ` · landscape ${researchBatch.landscape_briefing_date}`
               : ''}
           </div>
+          {researchBatch.parse_diagnostic && (
+            <div
+              className="text-xs border rounded-md p-3 space-y-1"
+              style={{
+                borderColor: 'var(--danger)',
+                color: 'var(--foreground)',
+              }}
+            >
+              <div className="uppercase tracking-wider" style={{ color: 'var(--danger)' }}>
+                Parse diagnostic — 0 leads surfaced
+              </div>
+              <div className="muted">
+                reason · {researchBatch.parse_diagnostic.reason} ·{' '}
+                {researchBatch.parse_diagnostic.likely_truncated
+                  ? 'likely output-token truncation'
+                  : 'structure mismatch'}
+              </div>
+              <div className="muted">
+                raw output · {researchBatch.parse_diagnostic.raw_output_length} chars
+              </div>
+              <details>
+                <summary className="cursor-pointer gold">first 1000 chars</summary>
+                <pre className="whitespace-pre-wrap mt-1 text-xs muted">
+                  {researchBatch.parse_diagnostic.raw_output_snippet}
+                </pre>
+              </details>
+            </div>
+          )}
           <ol className="space-y-3">
             {(researchBatch.leads ?? []).map((lead) => {
               const mutation = leadMutations[lead.lead_id];
