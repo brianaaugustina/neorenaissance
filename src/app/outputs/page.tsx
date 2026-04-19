@@ -4,6 +4,7 @@ import {
   listOutputsFacets,
   type OutputsListRow,
 } from '@/lib/supabase/client';
+import { formatPtTime } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -112,13 +113,7 @@ export default async function OutputsPage({
                     <span>·</span>
                     <StatusBadge status={r.approval_status} />
                     <span>·</span>
-                    <span>
-                      {new Date(r.created_at).toLocaleTimeString('en-US', {
-                        timeZone: 'America/Los_Angeles',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </span>
+                    <span>{formatPtTime(r.created_at)} PT</span>
                   </div>
                   {r.summary_preview && (
                     <p className="serif truncate">{r.summary_preview}</p>
@@ -132,14 +127,12 @@ export default async function OutputsPage({
                     </p>
                   )}
                 </div>
-                {r.approval_queue_id && (
-                  <Link
-                    href={`/queue/${r.approval_queue_id}/review`}
-                    className="shrink-0 text-xs gold hover:underline"
-                  >
-                    Review ↗
-                  </Link>
-                )}
+                <Link
+                  href={`/outputs/${r.agent_id}/${r.id}`}
+                  className="shrink-0 text-xs gold hover:underline"
+                >
+                  View ↗
+                </Link>
               </li>
             ))}
           </ul>

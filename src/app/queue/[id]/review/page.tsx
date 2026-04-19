@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase/client';
 import { LandscapeBody } from '@/components/LandscapeBody';
+import { formatPtDateTime } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -23,11 +24,7 @@ export default async function ReviewPage({
     .single();
   if (error || !item) notFound();
 
-  const created = new Date(item.created_at).toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const created = formatPtDateTime(item.created_at);
 
   const fullOutput = (item.full_output ?? {}) as Record<string, unknown>;
   const briefingHtml = fullOutput.briefing_html as string | undefined;

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AgentUpdates } from '@/components/AgentUpdates';
-import { getRecentAgentRuns } from '@/lib/supabase/client';
+import { getRecentAgentRuns, mapRunIdToParentOutput } from '@/lib/supabase/client';
+import { formatPtLongDate } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -11,12 +12,9 @@ export const revalidate = 0;
 function groupByDay(runs: Awaited<ReturnType<typeof getRecentAgentRuns>>) {
   const groups = new Map<string, typeof runs>();
   for (const run of runs) {
-    const day = new Date(run.started_at).toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    // Group by PT calendar day so a run that started 11:45pm PT lands on
+    // its PT day, not the UTC day the server saw it.
+    const day = formatPtLongDate(run.started_at);
     const bucket = groups.get(day) ?? [];
     bucket.push(run);
     groups.set(day, bucket);
@@ -26,6 +24,14 @@ function groupByDay(runs: Awaited<ReturnType<typeof getRecentAgentRuns>>) {
 
 export default async function AgentUpdatesPage() {
   const runs = await getRecentAgentRuns(200);
+  const outputByRun = await mapRunIdToParentOutput(
+    runs.map((r) => r.id),
+  );
+  // Convert Map → plain object for serialization into the client component.
+  const outputHrefByRunId: Record<string, { agentId: string; outputId: string }> = {};
+  for (const [runId, val] of outputByRun.entries()) {
+    outputHrefByRunId[runId] = val;
+  }
   const grouped = groupByDay(runs);
 
   return (
@@ -53,7 +59,7 @@ export default async function AgentUpdatesPage() {
                   · {dayRuns.length} run{dayRuns.length === 1 ? '' : 's'}
                 </span>
               </h2>
-              <AgentUpdates runs={dayRuns} />
+              <AgentUpdates runs={dayRuns} outputHrefByRunId={outputHrefByRunId} />
             </section>
           ))}
         </div>

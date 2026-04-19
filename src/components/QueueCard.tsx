@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import DOMPurify from 'isomorphic-dompurify';
 import { computeReadiness } from '@/lib/dashboard/readiness';
+import { formatPtTime } from '@/lib/time';
 
 interface DelegationSuggestion {
   task_title: string;
@@ -100,6 +101,7 @@ interface QueueCardProps {
     summary: string | null;
     full_output: any;
     created_at: string;
+    agent_output_id?: string | null;
   };
 }
 
@@ -268,10 +270,7 @@ export function QueueCard({ item }: QueueCardProps) {
 
   if (hidden) return null;
 
-  const created = new Date(item.created_at).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const created = formatPtTime(item.created_at);
 
   return (
     <article className="border rounded-lg p-4" style={{ borderColor: 'var(--border)' }}>
@@ -944,7 +943,11 @@ export function QueueCard({ item }: QueueCardProps) {
       {!isSuperseded && !updating && (
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <a
-            href={`/queue/${item.id}/review`}
+            href={
+              item.agent_output_id
+                ? `/outputs/${item.agent_name}/${item.agent_output_id}`
+                : `/queue/${item.id}/review`
+            }
             className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition min-h-[40px] inline-flex items-center"
             style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
           >

@@ -4,6 +4,7 @@ import { MyView } from '@/components/MyView';
 import { AgentHQ } from '@/components/AgentHQ';
 import { OpsChiefChat } from '@/components/OpsChiefChat';
 import { DashboardShell } from '@/components/DashboardShell';
+import { formatPtLongDate } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -17,15 +18,7 @@ export default async function Home() {
       <header className="flex items-baseline justify-between mb-6 md:mb-8">
         <div>
           <h1 className="serif text-3xl md:text-4xl gold">Neorenaissance</h1>
-          <p className="muted text-sm mt-1">
-            {new Date().toLocaleDateString('en-US', {
-              timeZone: 'America/Los_Angeles',
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </p>
+          <p className="muted text-sm mt-1">{formatPtLongDate(new Date())}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -72,7 +65,7 @@ export default async function Home() {
             initiatives={data.initiatives}
           />
         }
-        agentHQ={<AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} agentRuns={data.agentRuns} />}
+        agentHQ={<AgentHQ pending={data.pendingQueue} completedToday={data.completedToday} agentRuns={data.agentRuns} outputHrefByRunId={data.outputHrefByRunId} />}
         chat={
           <section className="card p-5 md:p-6">
             <h2 className="serif text-2xl mb-4">Chat with Ops Chief</h2>
