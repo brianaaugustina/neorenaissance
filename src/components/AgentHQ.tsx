@@ -6,9 +6,10 @@ interface AgentHQProps {
   pending: any[];
   completedToday: any[];
   agentRuns: any[];
+  outputHrefByRunId?: Record<string, { agentId: string; outputId: string }>;
 }
 
-export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
+export function AgentHQ({ pending, completedToday, agentRuns, outputHrefByRunId }: AgentHQProps) {
   return (
     <section className="card p-6 space-y-8">
       <div className="flex items-baseline justify-between">
@@ -39,7 +40,7 @@ export function AgentHQ({ pending, completedToday, agentRuns }: AgentHQProps) {
             View all →
           </Link>
         </div>
-        <AgentUpdates runs={agentRuns} />
+        <AgentUpdates runs={agentRuns} outputHrefByRunId={outputHrefByRunId} />
       </div>
 
       {/* ---- Divider ---- */}

@@ -6,7 +6,12 @@ import {
   type Initiative,
   type Task,
 } from '../notion/client';
-import { getChatHistory, getQueueItems, getRecentAgentRuns } from '../supabase/client';
+import {
+  getChatHistory,
+  getQueueItems,
+  getRecentAgentRuns,
+  mapRunIdToParentOutput,
+} from '../supabase/client';
 import { todayIsoPT } from '../time';
 
 // Queue-scope rule per the dashboard spec: an item belongs in the queue iff
@@ -61,6 +66,9 @@ export interface DashboardData {
   completedToday: any[];
   chatHistory: ChatMessageView[];
   agentRuns: any[];
+  /** Map: run_id → { agentId, outputId } for deep-linking agent updates
+   *  and recent runs into the dedicated /outputs/[agent]/[id] page. */
+  outputHrefByRunId: Record<string, { agentId: string; outputId: string }>;
   errors: Record<string, string>;
 }
 
@@ -165,6 +173,16 @@ export async function loadDashboardData(): Promise<DashboardData> {
     errors,
   );
 
+  // Resolve each displayed run to its parent output for deep-linking.
+  const outputByRun = await safe(
+    'outputHrefByRunId',
+    () => mapRunIdToParentOutput(recentAgentRuns.map((r: any) => r.id)),
+    new Map<string, { agentId: string; outputId: string }>(),
+    errors,
+  );
+  const outputHrefByRunId: Record<string, { agentId: string; outputId: string }> = {};
+  for (const [runId, val] of outputByRun.entries()) outputHrefByRunId[runId] = val;
+
   return {
     todayIso,
     weekStartIso,
@@ -177,6 +195,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     completedToday,
     chatHistory,
     agentRuns: recentAgentRuns,
+    outputHrefByRunId,
     errors,
   };
 }

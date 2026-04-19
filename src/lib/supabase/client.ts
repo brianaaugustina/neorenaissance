@@ -245,6 +245,29 @@ function summarizeOutputContent(type: string, c: Record<string, unknown>): strin
   }
 }
 
+// For each run id, find the parent agent_output so the dashboard /
+// /agent-updates pages can deep-link runs to their output pages. Returns
+// a map: runId → { agentId, outputId }. Only parent outputs (no
+// parent_output_id) so multi-output runs resolve to their root.
+export async function mapRunIdToParentOutput(
+  runIds: string[],
+): Promise<Map<string, { agentId: string; outputId: string }>> {
+  if (!runIds.length) return new Map();
+  const { data } = await supabaseAdmin()
+    .from('agent_outputs')
+    .select('id, agent_id, run_id')
+    .in('run_id', runIds)
+    .is('parent_output_id', null);
+  const map = new Map<string, { agentId: string; outputId: string }>();
+  for (const r of data ?? []) {
+    const row = r as { id: string; agent_id: string; run_id: string | null };
+    if (row.run_id && !map.has(row.run_id)) {
+      map.set(row.run_id, { agentId: row.agent_id, outputId: row.id });
+    }
+  }
+  return map;
+}
+
 export async function listOutputsFacets(): Promise<{
   agentIds: string[];
   outputTypes: string[];
