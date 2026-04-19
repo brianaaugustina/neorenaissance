@@ -30,12 +30,24 @@ interface ResearchLead {
   episode_pairing?: string | null;
   source_link?: string | null;
   contact_linkedin?: string | null;
+  // Talent Scout fields
+  artisan_name?: string;
+  trade?: string;
+  studio_or_shop?: string | null;
+  location?: string;
+  instagram_handle?: string | null;
+  shop_website?: string | null;
+  suggested_channel?: 'email' | 'ig-dm' | 'through-team';
+  venn_test_result?: string;
+  discovery_story?: string;
+  trade_gap_fill?: boolean;
+  contacts_row_id?: string | null;
   // Shared
   contact_name?: string | null;
   contact_email?: string | null;
   contact_role?: string | null;
   contact_flag?: 'unverified-contact' | 'no-named-contact' | null;
-  fit_score: number;
+  fit_score?: number;
   fit_rationale: string;
   suggested_episode?: string | null;
   suggested_angle?: string | null;
@@ -72,7 +84,7 @@ interface LeadPreviousVersion {
 }
 
 interface PitchDraftPayload {
-  subject?: string;
+  subject?: string | null;
   body?: string;
   // Sponsorship:
   brand_name?: string;
@@ -84,6 +96,14 @@ interface PitchDraftPayload {
   voice_mode?: 'founder-first' | 'show-first' | 'hybrid';
   angle_used?: string | null;
   episode_pairing?: string | null;
+  // Talent Scout:
+  artisan_name?: string;
+  trade?: string;
+  channel?: 'email' | 'ig-dm' | 'through-team';
+  instagram_handle?: string | null;
+  discovery_story?: string;
+  contacts_row_id?: string | null;
+  sent_at?: string;
   // Shared:
   contact_name?: string | null;
   contact_email?: string | null;
@@ -129,7 +149,9 @@ export function QueueCard({ item }: QueueCardProps) {
       : null;
   const weeklyPlan = item.type === 'recommendation' && item.full_output?.plan_markdown ? item.full_output : null;
   const isOutreachAgent =
-    item.agent_name === 'sponsorship-director' || item.agent_name === 'pr-director';
+    item.agent_name === 'sponsorship-director' ||
+    item.agent_name === 'pr-director' ||
+    item.agent_name === 'talent-scout';
   const researchBatch =
     isOutreachAgent && Array.isArray(item.full_output?.leads)
       ? (item.full_output as ResearchBatchPayload)
@@ -532,14 +554,40 @@ export function QueueCard({ item }: QueueCardProps) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="serif text-base">
                           {lead.brand_name ??
+                            lead.artisan_name ??
                             (lead.journalist_name && lead.outlet
                               ? `${lead.journalist_name} · ${lead.outlet}`
                               : (lead.outlet ?? lead.journalist_name ?? 'Lead'))}
                         </span>
                         <span className="text-xs muted">
+                          {lead.trade ? `${lead.trade} · ` : ''}
                           {(lead.tier ?? lead.outlet_tier) ? `${lead.tier ?? lead.outlet_tier} · ` : ''}
-                          fit {lead.fit_score}/5
+                          {lead.fit_score != null
+                            ? `fit ${lead.fit_score}/5`
+                            : lead.venn_test_result
+                              ? `venn ${lead.venn_test_result}`
+                              : ''}
+                          {lead.location ? ` · ${lead.location}` : ''}
                         </span>
+                        {lead.suggested_channel && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+                            style={{
+                              border: '1px solid var(--gold-dim)',
+                              color: 'var(--gold)',
+                            }}
+                          >
+                            {lead.suggested_channel}
+                          </span>
+                        )}
+                        {lead.trade_gap_fill && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+                            style={{ border: '1px solid var(--ok)', color: 'var(--ok)' }}
+                          >
+                            gap-fill
+                          </span>
+                        )}
                         {lead.suggested_voice_mode && (
                           <span
                             className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
@@ -588,6 +636,11 @@ export function QueueCard({ item }: QueueCardProps) {
                             : 'contact unverified'}
                       </div>
                       <p className="mt-1.5">{lead.fit_rationale}</p>
+                      {lead.discovery_story && (
+                        <p className="text-xs muted mt-1 italic">
+                          discovered · {lead.discovery_story}
+                        </p>
+                      )}
                       {(lead.suggested_episode || lead.episode_pairing) && (
                         <p className="text-xs muted mt-1">
                           pair with · {lead.suggested_episode ?? lead.episode_pairing}
@@ -760,6 +813,19 @@ export function QueueCard({ item }: QueueCardProps) {
                 {pitchDraft.suggested_episode ?? pitchDraft.episode_pairing}
               </div>
             )}
+            {pitchDraft.artisan_name && (
+              <div>
+                <span className="uppercase tracking-wider">Artisan · </span>
+                {pitchDraft.artisan_name}
+                {pitchDraft.trade ? ` (${pitchDraft.trade})` : ''}
+              </div>
+            )}
+            {pitchDraft.channel && (
+              <div>
+                <span className="uppercase tracking-wider">Channel · </span>
+                {pitchDraft.channel}
+              </div>
+            )}
             {pitchDraft.outreach_row_id && (
               <div className="md:col-span-2">
                 <a
@@ -772,6 +838,22 @@ export function QueueCard({ item }: QueueCardProps) {
                 </a>
               </div>
             )}
+            {/* Talent Scout Mark-as-sent — Gate 3 for IG DM and team-intro
+                channels (always), and email channel until Gmail OAuth lands.
+                Writes the Notion Outreach touch row. */}
+            {item.agent_name === 'talent-scout' &&
+              pitchDraft.channel &&
+              item.status === 'approved' &&
+              item.agent_output_id && (
+                <div className="md:col-span-2">
+                  <MarkAsSentControl
+                    agentOutputId={item.agent_output_id}
+                    channel={pitchDraft.channel}
+                    alreadySentAt={pitchDraft.sent_at}
+                    editedBody={editedBody ?? pitchDraft.body ?? null}
+                  />
+                </div>
+              )}
           </div>
         </div>
       )}
@@ -1077,6 +1159,80 @@ function ClipMeta({ clip }: { clip: ShowrunnerClipCaptionCard }) {
     <div className="mt-1.5 text-[11px] muted flex items-center gap-2 flex-wrap">
       {clip.filename && <span>📎 {clip.filename}</span>}
       {clip.storage_path && <span>(in storage — ready to schedule)</span>}
+    </div>
+  );
+}
+
+function MarkAsSentControl({
+  agentOutputId,
+  channel,
+  alreadySentAt,
+  editedBody,
+}: {
+  agentOutputId: string;
+  channel: 'email' | 'ig-dm' | 'through-team';
+  alreadySentAt?: string;
+  editedBody: string | null;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [sentAt, setSentAt] = useState<string | null>(alreadySentAt ?? null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (sentAt) {
+    return (
+      <div className="text-xs" style={{ color: 'var(--ok)' }}>
+        ✓ Marked as sent {formatPtTime(sentAt)} PT — Notion Outreach row created.
+      </div>
+    );
+  }
+
+  const label =
+    channel === 'email'
+      ? 'Mark as sent (email — Gmail OAuth pending)'
+      : channel === 'ig-dm'
+        ? 'Mark as sent (IG DM — you send manually)'
+        : 'Mark as sent (through team — you send manually)';
+
+  const click = () => {
+    setErr(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/talent-scout/drafts/${agentOutputId}/mark-sent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              finalBody: editedBody ?? undefined,
+            }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Mark as sent failed');
+        setSentAt(data.sentAt ?? new Date().toISOString());
+        router.refresh();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <button
+        onClick={click}
+        disabled={isPending}
+        className="px-3 py-1.5 text-xs rounded-md border hover:bg-white/5 transition disabled:opacity-40"
+        style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+      >
+        {isPending ? 'Logging…' : label}
+      </button>
+      {err && (
+        <span className="text-xs" style={{ color: 'var(--danger)' }}>
+          {err}
+        </span>
+      )}
     </div>
   );
 }

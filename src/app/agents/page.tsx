@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { RunOpsChiefButton } from '@/components/RunOpsChiefButton';
 import { RunPrResearchButton } from '@/components/RunPrResearchButton';
 import { RunSponsorshipResearchButton } from '@/components/RunSponsorshipResearchButton';
+import { RunTalentResearchButton } from '@/components/RunTalentResearchButton';
 import { ShowrunnerInput } from '@/components/ShowrunnerInput';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,27 @@ export default function AgentsPage() {
             manual until OAuth lands.
           </p>
           <RunSponsorshipResearchButton />
+        </section>
+
+        {/* Talent Scout */}
+        <section className="card p-5 md:p-6">
+          <div className="flex items-baseline justify-between gap-4 mb-3">
+            <h2 className="serif text-xl">Talent Scout</h2>
+            <span className="muted text-xs uppercase tracking-widest">
+              The Trades Show · Live
+            </span>
+          </div>
+          <p className="muted text-sm mb-4">
+            Manual-trigger research for Season 2 / Season 3 artisan candidates.
+            Each surfaced lead is written to the Notion Contacts DB immediately
+            (append-only) and carries a suggested channel — email, IG DM, or
+            through-team. Approving a lead generates the right draft for its
+            channel. Gate 3 is &ldquo;Mark as sent&rdquo; for all channels
+            until Gmail OAuth lands; once it does, email Sends fire via Gmail
+            and IG/team stay manual. No weekly cron — research runs when you
+            say so.
+          </p>
+          <RunTalentResearchButton />
         </section>
 
         {/* PR Director */}

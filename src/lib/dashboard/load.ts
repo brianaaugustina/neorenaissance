@@ -44,6 +44,12 @@ export function isApprovedWithDownstream(item: {
     if (captions.length === 0) return false;
     return captions.some((c) => !c.scheduled_at);
   }
+  // Talent Scout pitch drafts stay in queue until Mark-as-sent records the
+  // Notion Outreach touch row. sent_at is the terminal signal.
+  if (item.agent_name === 'talent-scout' && item.type === 'draft') {
+    const fo = (item.full_output ?? {}) as { sent_at?: unknown };
+    return !fo.sent_at;
+  }
   return false;
 }
 

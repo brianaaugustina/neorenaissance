@@ -108,7 +108,9 @@ export function computeReadiness(item: ReadinessInput): ReadinessLine | null {
 
   // Research batch
   if (
-    (agent === 'sponsorship-director' || agent === 'pr-director') &&
+    (agent === 'sponsorship-director' ||
+      agent === 'pr-director' ||
+      agent === 'talent-scout') &&
     type === 'report' &&
     Array.isArray(fo.leads)
   ) {
@@ -122,6 +124,34 @@ export function computeReadiness(item: ReadinessInput): ReadinessLine | null {
           approved === 0
             ? `${leads.length} leads ready for review.`
             : `${approved} of ${leads.length} leads drafted. Review the rest or archive the batch.`,
+      };
+    }
+  }
+
+  // Talent Scout outreach draft (three channel variants)
+  if (agent === 'talent-scout' && type === 'draft') {
+    const channel = (fo.channel as string | undefined) ?? 'email';
+    if (status === 'pending') {
+      return {
+        kind: 'ready',
+        message: `All inputs ready. Approve to unlock ${channel === 'email' ? 'Send / Mark as sent' : 'Mark as sent'}.`,
+      };
+    }
+    if (status === 'approved') {
+      if (fo.sent_at) {
+        return {
+          kind: 'post_approval',
+          message: `Logged as sent. Notion Outreach row created.`,
+        };
+      }
+      return {
+        kind: 'blocked',
+        message:
+          channel === 'email'
+            ? 'Approved. Send from Gmail (OAuth not yet wired), then click Mark as sent.'
+            : channel === 'ig-dm'
+              ? 'Approved. Copy the body, send the DM from Instagram, then click Mark as sent.'
+              : 'Approved. Send through the shop contact form / info@ email, then click Mark as sent.',
       };
     }
   }
