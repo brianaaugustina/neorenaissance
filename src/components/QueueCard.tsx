@@ -46,6 +46,18 @@ interface LeadPreviousVersion {
   replaced_at: string;
 }
 
+interface PitchDraftPayload {
+  subject?: string;
+  body?: string;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  brand_name?: string;
+  cta_type?: 'one-pager' | 'warm-intro' | 'enterprise-both';
+  suggested_episode?: string | null;
+  touch_number?: number;
+  outreach_row_id?: string | null;
+}
+
 interface QueueCardProps {
   item: {
     id: string;
@@ -78,13 +90,26 @@ export function QueueCard({ item }: QueueCardProps) {
     item.agent_name === 'sponsorship-director' && Array.isArray(item.full_output?.leads)
       ? (item.full_output as ResearchBatchPayload)
       : null;
+  const pitchDraft =
+    item.agent_name === 'sponsorship-director' &&
+    !Array.isArray(item.full_output?.leads) &&
+    typeof item.full_output?.body === 'string'
+      ? (item.full_output as PitchDraftPayload)
+      : null;
+  const [editedBody, setEditedBody] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
   const [leadMutations, setLeadMutations] = useState<Record<string, 'pending' | 'done' | 'error'>>({});
   const [leadReplacing, setLeadReplacing] = useState<Record<string, boolean>>({});
   const [leadFeedback, setLeadFeedback] = useState<Record<string, string>>({});
   const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
-  const hasExpandable = !!(hasBriefing || showrunner || weeklyPlan || researchBatch);
+  const hasExpandable = !!(
+    hasBriefing ||
+    showrunner ||
+    weeklyPlan ||
+    researchBatch ||
+    pitchDraft
+  );
   const isApprovedPlan = weeklyPlan && item.status === 'approved';
 
   const approveLead = (leadId: string) => {
@@ -144,12 +169,23 @@ export function QueueCard({ item }: QueueCardProps) {
     const feedbackText = feedback.trim();
     const shouldRetry = status === 'rejected' && !!feedbackText;
 
+    // For pitch drafts, send the (possibly edited) body so Gate 2 writes the
+    // final text into agent_outputs + the Notion Outreach row's Draft Message.
+    const finalBody =
+      pitchDraft && status === 'approved'
+        ? (editedBody ?? pitchDraft.body ?? '').trim() || undefined
+        : undefined;
+
     startTransition(async () => {
       try {
         const res = await fetch(`/api/queue/${item.id}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status, feedback: feedbackText || undefined }),
+          body: JSON.stringify({
+            status,
+            feedback: feedbackText || undefined,
+            finalBody,
+          }),
         });
         if (!res.ok) {
           const payload = await res.json().catch(() => ({}));
@@ -464,6 +500,80 @@ export function QueueCard({ item }: QueueCardProps) {
         </div>
       )}
 
+      {/* Sponsorship pitch draft — editable body, audit link to Notion */}
+      {expanded && pitchDraft && (
+        <div className="mb-3 space-y-3 text-sm">
+          <div>
+            <div className="text-xs muted uppercase tracking-wider mb-1">
+              Subject
+            </div>
+            <p className="serif">{pitchDraft.subject ?? '(no subject)'}</p>
+          </div>
+          <div>
+            <div className="text-xs muted uppercase tracking-wider mb-1">
+              Body {editedBody != null && (
+                <span style={{ color: 'var(--gold-dim)' }}>· edited</span>
+              )}
+            </div>
+            <textarea
+              value={editedBody ?? pitchDraft.body ?? ''}
+              onChange={(e) => setEditedBody(e.target.value)}
+              rows={Math.min(
+                20,
+                Math.max(
+                  8,
+                  (editedBody ?? pitchDraft.body ?? '').split('\n').length + 1,
+                ),
+              )}
+              className="w-full bg-transparent border rounded-md px-3 py-2 text-sm leading-relaxed resize-y"
+              style={{ borderColor: 'var(--border)' }}
+            />
+            <p className="text-xs muted mt-1">
+              Edit in place — your changes are saved to Notion on Approve.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs muted">
+            {pitchDraft.contact_name && (
+              <div>
+                <span className="uppercase tracking-wider">Contact · </span>
+                {pitchDraft.contact_name}
+                {pitchDraft.contact_email ? ` (${pitchDraft.contact_email})` : ''}
+              </div>
+            )}
+            {pitchDraft.brand_name && (
+              <div>
+                <span className="uppercase tracking-wider">Brand · </span>
+                {pitchDraft.brand_name}
+              </div>
+            )}
+            {pitchDraft.cta_type && (
+              <div>
+                <span className="uppercase tracking-wider">CTA · </span>
+                {pitchDraft.cta_type}
+              </div>
+            )}
+            {pitchDraft.suggested_episode && (
+              <div>
+                <span className="uppercase tracking-wider">Episode · </span>
+                {pitchDraft.suggested_episode}
+              </div>
+            )}
+            {pitchDraft.outreach_row_id && (
+              <div className="md:col-span-2">
+                <a
+                  href={`https://www.notion.so/${pitchDraft.outreach_row_id.replace(/-/g, '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="gold hover:underline"
+                >
+                  Open Outreach row in Notion ↗
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Weekly plan */}
       {expanded && weeklyPlan && (
         <div className="mb-3">
@@ -538,7 +648,9 @@ export function QueueCard({ item }: QueueCardProps) {
                 ? 'View weekly plan'
                 : researchBatch
                   ? `Review ${researchBatch.leads?.length ?? 0} leads`
-                  : 'View content package'}
+                  : pitchDraft
+                    ? 'Read pitch draft'
+                    : 'View content package'}
         </button>
       )}
 

@@ -28,6 +28,10 @@ export async function POST(
     const body = await req.json();
     const status = body?.status as QueueStatus | undefined;
     const feedback = body?.feedback as string | undefined;
+    // Optional: pitch drafts can send an edited body at Gate 2. If present
+    // we treat it as the final pitch text (overrides the original draft).
+    const finalBodyFromClient =
+      typeof body?.finalBody === 'string' ? (body.finalBody as string) : undefined;
     if (!status || !ALLOWED.includes(status)) {
       return NextResponse.json(
         { error: `status must be one of ${ALLOWED.join(', ')}` },
@@ -48,6 +52,29 @@ export async function POST(
 
     await updateQueueStatus(id, status, feedback);
 
+    // If Briana edited the pitch body before approval, persist it into
+    // approval_queue.full_output.body FIRST so the rest of the pipeline
+    // (agent_outputs final_content, Notion) sees the edit as the source
+    // of truth.
+    let effectiveFullOutput = item.full_output;
+    if (
+      status === 'approved' &&
+      finalBodyFromClient !== undefined &&
+      item.full_output &&
+      typeof item.full_output === 'object' &&
+      typeof (item.full_output as Record<string, unknown>).body === 'string'
+    ) {
+      const prev = (item.full_output as Record<string, unknown>).body as string;
+      if (finalBodyFromClient !== prev) {
+        const updated = { ...(item.full_output as Record<string, unknown>), body: finalBodyFromClient };
+        effectiveFullOutput = updated;
+        await supabaseAdmin()
+          .from('approval_queue')
+          .update({ full_output: updated })
+          .eq('id', id);
+      }
+    }
+
     // Sync agent_outputs. Parent row is updated directly; any children from
     // the same run get bulk-approved/rejected under the same package-level
     // decision. Per-item approval UI lands with Step 7.
@@ -60,7 +87,7 @@ export async function POST(
           outputId: item.agent_output_id,
           status,
           finalContent:
-            status === 'approved' ? (item.full_output ?? {}) : undefined,
+            status === 'approved' ? (effectiveFullOutput ?? {}) : undefined,
           rejectionReason: status === 'rejected' ? feedback : undefined,
         });
         if (item.run_id) {
@@ -81,10 +108,10 @@ export async function POST(
       try {
         const finalBody =
           status === 'approved' &&
-          item.full_output &&
-          typeof item.full_output === 'object' &&
-          typeof (item.full_output as Record<string, unknown>).body === 'string'
-            ? ((item.full_output as Record<string, unknown>).body as string)
+          effectiveFullOutput &&
+          typeof effectiveFullOutput === 'object' &&
+          typeof (effectiveFullOutput as Record<string, unknown>).body === 'string'
+            ? ((effectiveFullOutput as Record<string, unknown>).body as string)
             : undefined;
         await onPitchApproval({
           queueItemAgentOutputId: item.agent_output_id,
