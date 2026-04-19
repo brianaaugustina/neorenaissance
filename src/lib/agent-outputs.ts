@@ -32,7 +32,12 @@ export type ApprovalStatus =
   | 'approved'
   | 'edited'
   | 'rejected'
-  | 'expired';
+  | 'expired'
+  /** Briana marked the output as incorrect without providing feedback. The
+   *  row stays for future Supervisor training ("agent surfaced work that
+   *  shouldn't have been surfaced"). Distinct from rejected, which implies
+   *  actionable feedback. */
+  | 'ignored';
 
 export type LearningType =
   | 'retrospective'

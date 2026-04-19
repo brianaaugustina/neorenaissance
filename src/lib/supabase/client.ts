@@ -25,7 +25,10 @@ export type QueueStatus =
   /** Replaced by a newer run triggered from the Update button. Old draft
    *  stays in agent_outputs for audit; the queue card shows a 'superseded
    *  → see new draft' badge instead of approval controls. */
-  | 'superseded';
+  | 'superseded'
+  /** Briana hit the Ignore button. Drops from the queue; row persists in
+   *  agent_outputs for future Supervisor training (known-incorrect sample). */
+  | 'ignored';
 
 export interface DepositParams {
   agent_name: string;

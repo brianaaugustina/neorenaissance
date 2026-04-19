@@ -66,7 +66,7 @@ export default async function OutputsPage({
           label="Status"
           name="status"
           value={sp.status}
-          options={['pending', 'approved', 'edited', 'rejected', 'expired']}
+          options={['pending', 'approved', 'edited', 'rejected', 'expired', 'ignored']}
         />
         <DateInput label="Since" name="since" value={sp.since} />
         <DateInput label="Until" name="until" value={sp.until} />

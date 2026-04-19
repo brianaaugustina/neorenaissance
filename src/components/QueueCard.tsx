@@ -262,6 +262,26 @@ export function QueueCard({ item }: QueueCardProps) {
     });
   };
 
+  const ignore = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/queue/${item.id}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ignored' }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || `Ignore failed (${res.status})`);
+        }
+        setHidden(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
+
   const submitUpdate = () => {
     setError(null);
     const text = feedback.trim();
@@ -1067,6 +1087,15 @@ export function QueueCard({ item }: QueueCardProps) {
             style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
           >
             Update
+          </button>
+          <button
+            onClick={ignore}
+            disabled={isPending}
+            title="Remove from queue + mark as known-incorrect sample for future training. Row stays in agent_outputs."
+            className="px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[40px] ml-auto"
+            style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+          >
+            Ignore
           </button>
         </div>
       )}

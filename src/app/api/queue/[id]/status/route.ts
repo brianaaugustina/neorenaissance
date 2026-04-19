@@ -19,7 +19,14 @@ import { todayIsoPT } from '@/lib/time';
 
 export const maxDuration = 60;
 
-const ALLOWED: QueueStatus[] = ['approved', 'rejected', 'deferred', 'executed', 'pending'];
+const ALLOWED: QueueStatus[] = [
+  'approved',
+  'rejected',
+  'deferred',
+  'executed',
+  'pending',
+  'ignored',
+];
 
 export async function POST(
   req: Request,
@@ -75,6 +82,27 @@ export async function POST(
           .update({ full_output: updated })
           .eq('id', id);
       }
+    }
+
+    // Ignored — a terminal state distinct from approve/reject. Stamps the
+    // agent_output + children so the Supervisor (Phase 4) can learn from
+    // known-incorrect samples without confusing them with feedback-backed
+    // rejections. No downstream Notion writes, no permanent_preferences
+    // promotion, no executeShowrunnerDraft.
+    if (status === 'ignored' && item.agent_output_id) {
+      try {
+        await updateOutputStatus({
+          outputId: item.agent_output_id,
+          status: 'ignored',
+          rejectionReason: feedback || 'ignored by user',
+        });
+        if (item.run_id) {
+          await bulkUpdateOutputsByRunId(item.run_id, 'ignored');
+        }
+      } catch (e) {
+        console.error('Failed to sync agent_outputs for ignored:', e);
+      }
+      return NextResponse.json({ ok: true });
     }
 
     // Sync agent_outputs. Parent row is updated directly; any children from
