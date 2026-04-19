@@ -559,6 +559,172 @@ export async function searchOutreach(query: string, limit = 10): Promise<NotionR
 }
 
 // ---------------------------------------------------------------------------
+// Sponsorship Director — Outreach DB writes
+// ---------------------------------------------------------------------------
+// Schema fields used (confirmed via introspect-outreach.ts):
+//   Name (title), Organization (rich_text), Contact Name (rich_text),
+//   Contact Email (email), Contact LinkedIn (url), Fit Score (number),
+//   Why They Fit (rich_text), Draft Message (rich_text), Date Sent (date),
+//   Outreach Type (select), Venture (select), Status (select),
+//   Source (select), Season (rich_text), Approved (checkbox).
+//
+// Status values agent writes: 'Draft Ready', 'Pending Approval', 'Approved',
+// 'Sent', 'Pass'. Briana-only values ('Identified', 'Vetted', 'Responded')
+// stay available for manual triage.
+
+export type OutreachStatus =
+  | 'Identified'
+  | 'Vetted'
+  | 'Draft Ready'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Sent'
+  | 'Responded'
+  | 'Pass';
+
+export type OutreachType = 'Sponsorship' | 'Press' | 'Partnership' | 'Artisan Sourcing';
+export type OutreachVenture = 'The Trades Show' | 'The Corral' | 'Artisanship';
+export type OutreachSource = 'Claude' | 'Manual';
+
+export interface CreateOutreachRowParams {
+  name: string;
+  outreachType: OutreachType;
+  venture: OutreachVenture;
+  status: OutreachStatus;
+  source?: OutreachSource;
+  season?: string;
+  organization?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactLinkedin?: string;
+  website?: string;
+  instagramHandle?: string;
+  fitScore?: number;
+  whyFit?: string;
+  draftMessage?: string;
+  dateSent?: string; // YYYY-MM-DD
+  approved?: boolean;
+  contactId?: string; // Notion page id of an existing Contacts row (sub-step 2)
+}
+
+function richText(v?: string) {
+  return v ? { rich_text: [{ type: 'text' as const, text: { content: v } }] } : undefined;
+}
+
+function buildOutreachProperties(
+  params: Partial<CreateOutreachRowParams>,
+): Record<string, unknown> {
+  const p: Record<string, unknown> = {};
+  if (params.name !== undefined) {
+    p['Name'] = { title: [{ type: 'text', text: { content: params.name } }] };
+  }
+  if (params.outreachType) p['Outreach Type'] = { select: { name: params.outreachType } };
+  if (params.venture) p['Venture'] = { select: { name: params.venture } };
+  if (params.status) p['Status'] = { select: { name: params.status } };
+  if (params.source) p['Source'] = { select: { name: params.source } };
+  if (params.season !== undefined) {
+    const rt = richText(params.season);
+    if (rt) p['Season'] = rt;
+  }
+  if (params.organization !== undefined) {
+    const rt = richText(params.organization);
+    if (rt) p['Organization'] = rt;
+  }
+  if (params.contactName !== undefined) {
+    const rt = richText(params.contactName);
+    if (rt) p['Contact Name'] = rt;
+  }
+  if (params.contactEmail) p['Contact Email'] = { email: params.contactEmail };
+  if (params.contactLinkedin) p['Contact LinkedIn'] = { url: params.contactLinkedin };
+  if (params.website) p['Website'] = { url: params.website };
+  if (params.instagramHandle !== undefined) {
+    const rt = richText(params.instagramHandle);
+    if (rt) p['Instagram Handle'] = rt;
+  }
+  if (params.fitScore !== undefined) p['Fit Score'] = { number: params.fitScore };
+  if (params.whyFit !== undefined) {
+    const rt = richText(params.whyFit);
+    if (rt) p['Why They Fit'] = rt;
+  }
+  if (params.draftMessage !== undefined) {
+    const rt = richText(params.draftMessage);
+    if (rt) p['Draft Message'] = rt;
+  }
+  if (params.dateSent) p['Date Sent'] = { date: { start: params.dateSent } };
+  if (params.approved !== undefined) p['Approved'] = { checkbox: params.approved };
+  if (params.contactId) p['Contact'] = { relation: [{ id: params.contactId }] };
+  return p;
+}
+
+export async function createOutreachRow(
+  params: CreateOutreachRowParams,
+): Promise<string> {
+  const outreachDbId = env.notion.outreachDbId;
+  if (!outreachDbId) throw new Error('NOTION_OUTREACH_DB not set');
+  const dsId = await resolveDataSourceId(outreachDbId);
+  const properties = buildOutreachProperties(params);
+  const res: any = await notion.pages.create({
+    parent: { type: 'data_source_id', data_source_id: dsId } as any,
+    properties: properties as any,
+  });
+  return res.id as string;
+}
+
+export async function updateOutreachRow(
+  pageId: string,
+  params: Partial<CreateOutreachRowParams>,
+): Promise<void> {
+  const properties = buildOutreachProperties(params);
+  await notion.pages.update({ page_id: pageId, properties: properties as any });
+}
+
+// Fetches currently-active Outreach rows for a given venture + outreach type.
+// Used during research batch generation to dedupe: don't re-surface a brand
+// already in the pipeline.
+export interface OutreachPipelineRow {
+  id: string;
+  name: string;
+  organization: string | null;
+  contactEmail: string | null;
+  status: string | null;
+  fitScore: number | null;
+  season: string | null;
+}
+
+export async function getActiveOutreachRows(
+  outreachType: OutreachType,
+  venture: OutreachVenture,
+): Promise<OutreachPipelineRow[]> {
+  const outreachDbId = env.notion.outreachDbId;
+  if (!outreachDbId) return [];
+  const res: any = await queryDs(outreachDbId, {
+    filter: {
+      and: [
+        { property: 'Outreach Type', select: { equals: outreachType } },
+        { property: 'Venture', select: { equals: venture } },
+        // Treat everything except 'Pass' as active; Briana can prune manually.
+        { property: 'Status', select: { does_not_equal: 'Pass' } },
+      ],
+    },
+    page_size: 100,
+  });
+  return (res.results ?? []).map((page: any) => {
+    const props = page.properties ?? {};
+    const orgProp = props['Organization']?.rich_text ?? [];
+    const seasonProp = props['Season']?.rich_text ?? [];
+    return {
+      id: page.id,
+      name: getTitle(page),
+      organization: orgProp.map((t: any) => t.plain_text).join('').trim() || null,
+      contactEmail: props['Contact Email']?.email ?? null,
+      status: props['Status']?.select?.name ?? null,
+      fitScore: props['Fit Score']?.number ?? null,
+      season: seasonProp.map((t: any) => t.plain_text).join('').trim() || null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // TTS-specific queries for Showrunner daily check
 // ---------------------------------------------------------------------------
 export async function getTTSTasksForWeek(
