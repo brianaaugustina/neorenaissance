@@ -434,42 +434,19 @@ export function QueueCard({ item }: QueueCardProps) {
           )}
 
           {activeTab === 'captions' && (
-            <ol className="space-y-3 text-sm list-decimal list-inside">
-              {(() => {
-                // Prefer the structured clip_captions (v1 + v2 both have this).
-                // Fall back to legacy social_captions[] string array.
-                interface ShowrunnerClipCaption {
-                  caption?: string;
-                  hashtags?: string[];
-                }
-                const clipCaptions = Array.isArray(showrunner.clip_captions)
-                  ? (showrunner.clip_captions as ShowrunnerClipCaption[])
-                  : [];
-                if (clipCaptions.length > 0) {
-                  return clipCaptions.map((c, i) => {
-                    const hashtags = Array.isArray(c.hashtags) ? c.hashtags.join(' ') : '';
-                    return (
-                      <li key={i} className="muted whitespace-pre-wrap">
-                        {c.caption ?? ''}
-                        {hashtags && (
-                          <div className="text-xs" style={{ color: 'var(--gold-dim)' }}>
-                            {hashtags}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  });
-                }
-                const legacy = Array.isArray(showrunner.social_captions)
+            <ShowrunnerCaptionsList
+              clipCaptions={
+                Array.isArray(showrunner.clip_captions)
+                  ? (showrunner.clip_captions as ShowrunnerClipCaptionCard[])
+                  : []
+              }
+              legacySocialCaptions={
+                Array.isArray(showrunner.social_captions)
                   ? (showrunner.social_captions as string[])
-                  : [];
-                return legacy.map((caption: string, i: number) => (
-                  <li key={i} className="muted whitespace-pre-wrap">
-                    {caption}
-                  </li>
-                ));
-              })()}
-            </ol>
+                  : []
+              }
+              approved={item.status === 'approved' || item.status === 'executed'}
+            />
           )}
 
           {activeTab === 'post' && (
@@ -898,5 +875,170 @@ export function QueueCard({ item }: QueueCardProps) {
       </div>
       {error && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{error}</p>}
     </article>
+  );
+}
+
+// ============================================================================
+// Showrunner captions tab — with per-clip Schedule button (Pass B)
+// ============================================================================
+
+interface ShowrunnerClipCaptionCard {
+  index?: number;
+  caption?: string;
+  hashtags?: string[];
+  platforms?: string[];
+  filename?: string;
+  storage_path?: string;
+  output_id?: string;
+  scheduled_at?: string;
+  publish_date?: string;
+  publish_time?: string;
+  publish_timezone?: string;
+  notion_content_id?: string;
+}
+
+function ShowrunnerCaptionsList({
+  clipCaptions,
+  legacySocialCaptions,
+  approved,
+}: {
+  clipCaptions: ShowrunnerClipCaptionCard[];
+  legacySocialCaptions: string[];
+  approved: boolean;
+}) {
+  if (clipCaptions.length === 0 && legacySocialCaptions.length === 0) {
+    return <p className="text-xs muted">(no captions)</p>;
+  }
+  if (clipCaptions.length === 0) {
+    return (
+      <ol className="space-y-3 text-sm list-decimal list-inside">
+        {legacySocialCaptions.map((caption, i) => (
+          <li key={i} className="muted whitespace-pre-wrap">
+            {caption}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+  return (
+    <ol className="space-y-4 text-sm list-decimal list-inside">
+      {clipCaptions.map((c, i) => (
+        <li key={c.output_id ?? i} className="muted whitespace-pre-wrap">
+          <div className="inline-flex flex-wrap items-center gap-2 align-top">
+            <span>{c.caption ?? ''}</span>
+          </div>
+          {Array.isArray(c.hashtags) && c.hashtags.length > 0 && (
+            <div className="text-xs mt-1" style={{ color: 'var(--gold-dim)' }}>
+              {c.hashtags.join(' ')}
+            </div>
+          )}
+          <ClipMeta clip={c} />
+          {approved && c.output_id && <ClipScheduleControl clip={c} />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ClipMeta({ clip }: { clip: ShowrunnerClipCaptionCard }) {
+  if (!clip.storage_path && !clip.filename) return null;
+  return (
+    <div className="mt-1.5 text-[11px] muted flex items-center gap-2 flex-wrap">
+      {clip.filename && <span>📎 {clip.filename}</span>}
+      {clip.storage_path && <span>(in storage — ready to schedule)</span>}
+    </div>
+  );
+}
+
+function ClipScheduleControl({ clip }: { clip: ShowrunnerClipCaptionCard }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [date, setDate] = useState(clip.publish_date ?? '');
+  const [time, setTime] = useState(clip.publish_time ?? '11:11');
+  const [err, setErr] = useState<string | null>(null);
+  const isScheduled = !!clip.scheduled_at;
+
+  const onSchedule = () => {
+    setErr(null);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setErr('Pick a date first');
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/showrunner/clips/${clip.output_id}/schedule`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              publishDate: date,
+              publishTime: time,
+              publishTimezone: 'America/Los_Angeles',
+            }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Schedule failed');
+        router.refresh();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
+
+  if (isScheduled) {
+    return (
+      <div className="mt-2 text-xs">
+        <span style={{ color: 'var(--ok)' }}>
+          ✓ Scheduled for {clip.publish_date} {clip.publish_time} PT
+        </span>
+        {clip.notion_content_id && (
+          <a
+            href={`https://www.notion.so/${clip.notion_content_id.replace(/-/g, '')}`}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-2 gold hover:underline"
+          >
+            Open in Notion ↗
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        disabled={isPending}
+        className="bg-transparent border rounded-md px-2 py-1 text-xs"
+        style={{ borderColor: 'var(--border)' }}
+      />
+      <input
+        type="time"
+        value={time}
+        onChange={(e) => setTime(e.target.value)}
+        disabled={isPending}
+        className="bg-transparent border rounded-md px-2 py-1 text-xs"
+        style={{ borderColor: 'var(--border)' }}
+      />
+      <span className="text-[11px] muted">PT</span>
+      <button
+        onClick={onSchedule}
+        disabled={isPending}
+        className="px-3 py-1 text-xs rounded-md border hover:bg-white/5 transition disabled:opacity-40"
+        style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+      >
+        {isPending ? 'Scheduling…' : 'Schedule'}
+      </button>
+      {err && (
+        <span className="text-xs" style={{ color: 'var(--danger)' }}>
+          {err}
+        </span>
+      )}
+    </div>
   );
 }

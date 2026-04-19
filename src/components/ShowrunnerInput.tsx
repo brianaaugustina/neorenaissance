@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 interface ClipRow {
   description: string;
   publishDate: string;
+  file?: File | null;
 }
 
 const DEFAULT_PLATFORMS = ['IN@tradesshow', 'TIKTOK@tradesshow', 'LI@brianaottoboni'];
@@ -39,7 +40,7 @@ export function ShowrunnerInput() {
   };
 
   const addClip = () =>
-    setClips((prev) => [...prev, { description: '', publishDate: '' }]);
+    setClips((prev) => [...prev, { description: '', publishDate: '', file: null }]);
 
   const updateClip = (i: number, patch: Partial<ClipRow>) =>
     setClips((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
@@ -56,27 +57,55 @@ export function ShowrunnerInput() {
 
     startTransition(async () => {
       try {
-        const hasClips = clips.some((c) => c.description.trim());
-        const res = await fetch('/api/agents/showrunner/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transcript,
-            episodeType,
-            guestName: guestName.trim() || undefined,
-            guestLinks: guestLinks.trim() || undefined,
-            timestampedOutline: timestampedOutline.trim() || undefined,
-            clips: hasClips
-              ? clips
-                  .filter((c) => c.description.trim())
-                  .map((c) => ({
-                    description: c.description.trim(),
-                    publishDate: c.publishDate || undefined,
-                    platforms: DEFAULT_PLATFORMS,
-                  }))
-              : [],
-          }),
-        });
+        const activeClips = clips.filter((c) => c.description.trim());
+        const hasFiles = activeClips.some((c) => c.file);
+        let res: Response;
+
+        if (hasFiles) {
+          // Multipart path — each clip file attached with a unique field name
+          // the server route looks up via clips[i].fileFieldName.
+          const form = new FormData();
+          form.append('transcript', transcript);
+          form.append('episodeType', episodeType);
+          if (guestName.trim()) form.append('guestName', guestName.trim());
+          if (guestLinks.trim()) form.append('guestLinks', guestLinks.trim());
+          if (timestampedOutline.trim())
+            form.append('timestampedOutline', timestampedOutline.trim());
+
+          const clipsPayload = activeClips.map((c, i) => {
+            const fieldName = `clipFile_${i}`;
+            if (c.file) form.append(fieldName, c.file, c.file.name);
+            return {
+              description: c.description.trim(),
+              publishDate: c.publishDate || undefined,
+              platforms: DEFAULT_PLATFORMS,
+              fileFieldName: c.file ? fieldName : undefined,
+            };
+          });
+          form.append('clips', JSON.stringify(clipsPayload));
+
+          res = await fetch('/api/agents/showrunner/run', {
+            method: 'POST',
+            body: form, // browser sets multipart boundary
+          });
+        } else {
+          res = await fetch('/api/agents/showrunner/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transcript,
+              episodeType,
+              guestName: guestName.trim() || undefined,
+              guestLinks: guestLinks.trim() || undefined,
+              timestampedOutline: timestampedOutline.trim() || undefined,
+              clips: activeClips.map((c) => ({
+                description: c.description.trim(),
+                publishDate: c.publishDate || undefined,
+                platforms: DEFAULT_PLATFORMS,
+              })),
+            }),
+          });
+        }
 
         const raw = await res.text();
         let data: { error?: string; episodeTitle?: string; captionCount?: number } = {};
@@ -196,7 +225,7 @@ export function ShowrunnerInput() {
 
         {clips.length === 0 && (
           <p className="text-xs muted">
-            Add clips to have Showrunner write one social caption per clip and create Notion Content entries. Attach the video yourself in Notion after the entry is created.
+            Add clips to have Showrunner write one social caption per clip. Attach the video file here — it stays in Showrunner storage until you schedule, then moves to Notion.
           </p>
         )}
 
@@ -220,24 +249,38 @@ export function ShowrunnerInput() {
             <textarea
               value={clip.description}
               onChange={(e) => updateClip(i, { description: e.target.value })}
-              placeholder="Describe the clip (e.g. Elias explaining the weathering process, 0:32-1:15)"
-              rows={2}
+              placeholder="Paste the clip transcript (Showrunner reads this to write the caption)"
+              rows={3}
               className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
               style={{ borderColor: 'var(--border)' }}
               disabled={isPending}
             />
             <div className="flex flex-wrap items-center gap-3">
-              <label className="text-xs muted">
-                Publish
+              <label
+                className="px-3 py-1.5 text-xs rounded-md border cursor-pointer hover:bg-white/5 transition"
+                style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+              >
+                {clip.file ? `📎 ${clip.file.name}` : 'Upload clip video'}
                 <input
-                  type="date"
-                  value={clip.publishDate}
-                  onChange={(e) => updateClip(i, { publishDate: e.target.value })}
-                  className="ml-2 bg-transparent border rounded-md px-2 py-1 text-xs"
-                  style={{ borderColor: 'var(--border)' }}
+                  type="file"
+                  accept="video/*,image/*"
+                  onChange={(e) =>
+                    updateClip(i, { file: e.target.files?.[0] ?? null })
+                  }
+                  className="hidden"
                   disabled={isPending}
                 />
               </label>
+              {clip.file && (
+                <button
+                  onClick={() => updateClip(i, { file: null })}
+                  disabled={isPending}
+                  type="button"
+                  className="text-xs muted hover:text-white/80"
+                >
+                  Clear file
+                </button>
+              )}
             </div>
           </div>
         ))}
