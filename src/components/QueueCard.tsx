@@ -27,6 +27,9 @@ interface ResearchLead {
   approved?: boolean;
   draft_output_id?: string | null;
   outreach_row_id?: string | null;
+  replaced_at?: string;
+  replacement_feedback?: string | null;
+  previous_versions?: LeadPreviousVersion[];
 }
 
 interface ResearchBatchPayload {
@@ -34,6 +37,13 @@ interface ResearchBatchPayload {
   surfaced_count?: number;
   season?: string;
   leads?: ResearchLead[];
+}
+
+interface LeadPreviousVersion {
+  brand_name: string;
+  fit_score: number;
+  feedback: string | null;
+  replaced_at: string;
 }
 
 interface QueueCardProps {
@@ -71,6 +81,8 @@ export function QueueCard({ item }: QueueCardProps) {
   const [activeTab, setActiveTab] = useState<'post' | 'meta' | 'captions'>('post');
   const [showExecutePreview, setShowExecutePreview] = useState(false);
   const [leadMutations, setLeadMutations] = useState<Record<string, 'pending' | 'done' | 'error'>>({});
+  const [leadReplacing, setLeadReplacing] = useState<Record<string, boolean>>({});
+  const [leadFeedback, setLeadFeedback] = useState<Record<string, string>>({});
   const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
   const hasExpandable = !!(hasBriefing || showrunner || weeklyPlan || researchBatch);
   const isApprovedPlan = weeklyPlan && item.status === 'approved';
@@ -95,6 +107,33 @@ export function QueueCard({ item }: QueueCardProps) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Failed';
         setLeadMutations((prev) => ({ ...prev, [leadId]: 'error' }));
+        setLeadErrors((prev) => ({ ...prev, [leadId]: msg }));
+      }
+    });
+  };
+
+  const replaceLead = (leadId: string) => {
+    setLeadErrors((prev) => ({ ...prev, [leadId]: '' }));
+    setLeadReplacing((prev) => ({ ...prev, [leadId]: true }));
+    const feedback = leadFeedback[leadId]?.trim() || undefined;
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/agents/sponsorship-director/leads/replace`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ queueItemId: item.id, leadId, feedback }),
+          },
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Replacement failed');
+        setLeadFeedback((prev) => ({ ...prev, [leadId]: '' }));
+        setLeadReplacing((prev) => ({ ...prev, [leadId]: false }));
+        router.refresh(); // pull the updated batch
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed';
+        setLeadReplacing((prev) => ({ ...prev, [leadId]: false }));
         setLeadErrors((prev) => ({ ...prev, [leadId]: msg }));
       }
     });
@@ -320,7 +359,9 @@ export function QueueCard({ item }: QueueCardProps) {
             {(researchBatch.leads ?? []).map((lead) => {
               const mutation = leadMutations[lead.lead_id];
               const isDone = lead.approved || mutation === 'done';
-              const isLoading = mutation === 'pending';
+              const isApproving = mutation === 'pending';
+              const isReplacing = leadReplacing[lead.lead_id];
+              const priorCount = lead.previous_versions?.length ?? 0;
               return (
                 <li
                   key={lead.lead_id}
@@ -334,6 +375,17 @@ export function QueueCard({ item }: QueueCardProps) {
                         <span className="text-xs muted">
                           {lead.tier} · fit {lead.fit_score}/5
                         </span>
+                        {priorCount > 0 && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider"
+                            style={{ color: 'var(--gold-dim)' }}
+                            title={(lead.previous_versions ?? [])
+                              .map((v) => `${v.brand_name}${v.feedback ? ` — ${v.feedback}` : ''}`)
+                              .join('\n')}
+                          >
+                            replaced {priorCount}x
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs muted mt-0.5">
                         {lead.contact_name
@@ -351,18 +403,10 @@ export function QueueCard({ item }: QueueCardProps) {
                       {lead.source_note && (
                         <p className="text-xs muted mt-0.5">source · {lead.source_note}</p>
                       )}
-                      {leadErrors[lead.lead_id] && (
-                        <p
-                          className="text-xs mt-1"
-                          style={{ color: 'var(--danger)' }}
-                        >
-                          {leadErrors[lead.lead_id]}
-                        </p>
-                      )}
                     </div>
                     <button
                       onClick={() => approveLead(lead.lead_id)}
-                      disabled={isDone || isLoading}
+                      disabled={isDone || isApproving || isReplacing}
                       className="shrink-0 px-3 py-1.5 text-xs rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[36px]"
                       style={{
                         borderColor: isDone ? 'var(--gold-dim)' : 'var(--gold)',
@@ -371,11 +415,48 @@ export function QueueCard({ item }: QueueCardProps) {
                     >
                       {isDone
                         ? 'Draft queued'
-                        : isLoading
+                        : isApproving
                           ? 'Drafting…'
                           : 'Approve lead'}
                     </button>
                   </div>
+
+                  {/* Feedback + Replace row — hidden once the lead is approved */}
+                  {!isDone && (
+                    <div className="mt-2.5 flex items-stretch gap-2">
+                      <input
+                        type="text"
+                        placeholder="Feedback to guide a replacement (optional)…"
+                        value={leadFeedback[lead.lead_id] ?? ''}
+                        onChange={(e) =>
+                          setLeadFeedback((prev) => ({
+                            ...prev,
+                            [lead.lead_id]: e.target.value,
+                          }))
+                        }
+                        disabled={isApproving || isReplacing}
+                        className="flex-1 min-w-0 bg-transparent border rounded-md px-2.5 py-1.5 text-xs disabled:opacity-40"
+                        style={{ borderColor: 'var(--border)' }}
+                      />
+                      <button
+                        onClick={() => replaceLead(lead.lead_id)}
+                        disabled={isApproving || isReplacing}
+                        className="shrink-0 px-3 py-1.5 text-xs rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[36px]"
+                        style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+                      >
+                        {isReplacing ? 'Replacing…' : 'Replace'}
+                      </button>
+                    </div>
+                  )}
+
+                  {leadErrors[lead.lead_id] && (
+                    <p
+                      className="text-xs mt-1.5"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      {leadErrors[lead.lead_id]}
+                    </p>
+                  )}
                 </li>
               );
             })}

@@ -40,6 +40,14 @@ const PRICE_OUT_PER_MTOK = 15;
 
 export type SponsorshipTier = 'tier-a' | 'tier-b' | 'tier-c';
 
+export interface LeadReplacementHistoryEntry {
+  brand_name: string;
+  fit_score: number;
+  fit_rationale: string;
+  feedback: string | null;
+  replaced_at: string;
+}
+
 export interface ResearchLead {
   lead_id: string;
   brand_name: string;
@@ -59,6 +67,10 @@ export interface ResearchLead {
   draft_output_id?: string | null;
   outreach_row_id?: string | null;
   skipped?: boolean;
+  // Mutated on replace:
+  replaced_at?: string;
+  replacement_feedback?: string | null;
+  previous_versions?: LeadReplacementHistoryEntry[];
 }
 
 export interface ResearchBatch {
@@ -735,6 +747,255 @@ export async function onPitchApproval(params: {
     console.error('Sponsorship Outreach status update failed:', e);
   }
   return true;
+}
+
+// ============================================================================
+// Replace a single lead — triggered from the per-lead Replace button.
+// Accepts optional feedback ("already in pipeline", "not a values fit", etc.)
+// and regenerates one new lead that addresses it while avoiding duplicates
+// against both the remaining batch and the active Notion pipeline.
+// ============================================================================
+
+const REPLACE_SYSTEM_INSTRUCTIONS = `
+You are replacing ONE sponsor research lead for The Trades Show.
+
+The lead being replaced plus Briana's feedback (if any) is below. Return
+exactly ONE new candidate that scores 3+ on the 5-point fit test in the
+playbook. Avoid every brand listed in "do not re-surface" in the prompt.
+
+# Output format (strict JSON, no commentary)
+
+Wrap the single candidate exactly between these markers:
+
+<!-- BEGIN_REPLACEMENT -->
+{
+  "brand_name": "string",
+  "tier": "tier-a" | "tier-b" | "tier-c",
+  "fit_score": 3-5 (integer — must pass threshold),
+  "fit_rationale": "one concrete sentence",
+  "contact_name": "string or null",
+  "contact_email": "string or null",
+  "contact_role": "string or null",
+  "contact_linkedin": "string or null",
+  "contact_flag": "unverified-contact" | "no-named-contact" | null,
+  "suggested_episode": "string or null",
+  "source_note": "where you found them / what triggered consideration"
+}
+<!-- END_REPLACEMENT -->
+
+# Rules
+- fit_score must be at least 3. If you cannot find a brand that clears
+  the threshold AND addresses the feedback AND avoids duplicates, return
+  the best candidate available at score 3 — do not go below.
+- Never re-surface a brand on the "do not re-surface" list.
+- Never re-surface a brand currently in the Notion pipeline.
+- If the feedback names a specific concern (category saturation, values
+  mismatch, geographic preference), the replacement must directly address it.
+- If the feedback is empty, treat it as "surface a different strong
+  candidate with a notably distinct angle from the one being replaced."
+
+Return ONLY the wrapped JSON. No preamble.
+`.trim();
+
+export interface ReplaceLeadParams {
+  batch: ResearchBatch;
+  leadId: string;
+  feedback?: string;
+  parentQueueItemId: string;
+  parentOutputId: string;
+}
+
+export interface ReplaceLeadResult {
+  lead: ResearchLead;
+  tokensUsed: number;
+  costEstimate: number;
+}
+
+export async function replaceLead(
+  params: ReplaceLeadParams,
+): Promise<ReplaceLeadResult> {
+  const { batch, leadId, parentQueueItemId, parentOutputId } = params;
+  const feedback = (params.feedback ?? '').trim();
+
+  const leadToReplace = batch.leads.find((l) => l.lead_id === leadId);
+  if (!leadToReplace) {
+    throw new Error(`Lead ${leadId} not found in batch`);
+  }
+  if (leadToReplace.approved) {
+    throw new Error(`Lead ${leadId} already approved — cannot replace`);
+  }
+
+  const [permanentPreferences, recentFeedback, pitchExemplars, pipeline] =
+    await Promise.all([
+      getPermanentPreferences(AGENT_NAME).catch(() => [] as string[]),
+      getRecentFeedback(AGENT_NAME, 24 * 14, ['report']).catch(
+        () => [] as RecentFeedbackItem[],
+      ),
+      getApprovedOutputsByType({
+        agentId: 'sponsorship-director',
+        venture: 'trades-show',
+        outputType: 'pitch_email',
+        limit: 3,
+        requireFinalContent: true,
+      }).catch(() => [] as ApprovedOutputExample[]),
+      getActiveOutreachRows(NOTION_OUTREACH_TYPE, NOTION_VENTURE).catch(
+        () => [] as OutreachPipelineRow[],
+      ),
+    ]);
+
+  const memoryBlock = permanentPreferences.length
+    ? '\n\n# Permanent preferences (apply every run)\n' +
+      permanentPreferences.map((r) => `- ${r}`).join('\n')
+    : '';
+
+  const system =
+    loadSponsorshipContextFiles() +
+    memoryBlock +
+    renderExemplars('pitch emails', pitchExemplars) +
+    renderRecentFeedback(recentFeedback) +
+    '\n\n---\n\n' +
+    REPLACE_SYSTEM_INSTRUCTIONS;
+
+  // Build the "do not re-surface" list: every other surfaced brand, every
+  // pipeline brand, plus the brand being replaced AND all its prior versions.
+  const otherBrands = batch.leads
+    .filter((l) => l.lead_id !== leadId)
+    .map((l) => l.brand_name);
+  const priorVersionBrands = (leadToReplace.previous_versions ?? []).map(
+    (v) => v.brand_name,
+  );
+  const pipelineBrands = pipeline.map((p) => p.organization ?? p.name).filter(Boolean) as string[];
+  const blockedBrands = Array.from(
+    new Set([leadToReplace.brand_name, ...otherBrands, ...priorVersionBrands, ...pipelineBrands]),
+  );
+
+  const user = `Replace this sponsor lead.
+
+# LEAD TO REPLACE
+Brand: ${leadToReplace.brand_name}
+Tier: ${leadToReplace.tier}
+Fit score: ${leadToReplace.fit_score}/5
+Rationale: ${leadToReplace.fit_rationale}
+${leadToReplace.suggested_episode ? `Paired episode: ${leadToReplace.suggested_episode}` : ''}
+
+# BRIANA'S FEEDBACK
+${feedback ? feedback : '(no specific feedback — surface a strong candidate with a different angle)'}
+
+# DO NOT RE-SURFACE (duplicates, pipeline, prior replacements)
+${blockedBrands.map((b) => `- ${b}`).join('\n')}
+
+Today: ${todayIsoPT()}. Season: ${SEASON_TAG}.
+
+Return the replacement JSON wrapped between BEGIN_REPLACEMENT / END_REPLACEMENT markers.`;
+
+  const result = await think({
+    systemPrompt: system,
+    userPrompt: user,
+    maxTokens: 1500,
+  });
+
+  const rawJson =
+    extractJsonBlock(result.text, '<!-- BEGIN_REPLACEMENT -->', '<!-- END_REPLACEMENT -->') ??
+    result.text;
+  type Candidate = {
+    brand_name?: string;
+    tier?: SponsorshipTier;
+    fit_score?: number;
+    fit_rationale?: string;
+    contact_name?: string | null;
+    contact_email?: string | null;
+    contact_role?: string | null;
+    contact_linkedin?: string | null;
+    contact_flag?: 'unverified-contact' | 'no-named-contact' | null;
+    suggested_episode?: string | null;
+    source_note?: string | null;
+  };
+  const parsed = tryParseJson<Candidate>(rawJson);
+  if (!parsed?.brand_name) {
+    throw new Error('Replacement returned no valid candidate — try again or edit feedback.');
+  }
+
+  // Guard: even if the model ignored the block list, drop duplicates. Don't
+  // throw — fall back to surfaced data but warn in the server log.
+  const lowered = parsed.brand_name.toLowerCase();
+  if (blockedBrands.some((b) => b.toLowerCase() === lowered)) {
+    console.warn(
+      `[sponsorship] replacement returned a blocked brand: ${parsed.brand_name}. Surfacing anyway so Briana can re-replace.`,
+    );
+  }
+
+  const fitScore = typeof parsed.fit_score === 'number' ? parsed.fit_score : 3;
+  const replacement: ResearchLead = {
+    lead_id: leadToReplace.lead_id, // preserve the lead slot
+    brand_name: parsed.brand_name,
+    tier: (parsed.tier as SponsorshipTier) ?? 'tier-b',
+    contact_name: parsed.contact_name ?? null,
+    contact_email: parsed.contact_email ?? null,
+    contact_role: parsed.contact_role ?? null,
+    contact_linkedin: parsed.contact_linkedin ?? null,
+    contact_flag: parsed.contact_flag ?? null,
+    fit_score: fitScore < 3 ? 3 : fitScore,
+    fit_rationale: parsed.fit_rationale ?? '',
+    suggested_episode: parsed.suggested_episode ?? null,
+    source_note: parsed.source_note ?? null,
+    approved: false,
+    draft_output_id: null,
+    outreach_row_id: null,
+    skipped: false,
+    replaced_at: new Date().toISOString(),
+    replacement_feedback: feedback || null,
+    previous_versions: [
+      ...(leadToReplace.previous_versions ?? []),
+      {
+        brand_name: leadToReplace.brand_name,
+        fit_score: leadToReplace.fit_score,
+        fit_rationale: leadToReplace.fit_rationale,
+        feedback: feedback || null,
+        replaced_at: new Date().toISOString(),
+      },
+    ],
+  };
+
+  await mutateResearchBatch({
+    parentQueueItemId,
+    parentOutputId,
+    mutate: (b) => ({
+      ...b,
+      leads: b.leads.map((l) => (l.lead_id === leadId ? replacement : l)),
+    }),
+  });
+
+  return {
+    lead: replacement,
+    tokensUsed: result.inputTokens + result.outputTokens,
+    costEstimate: result.costEstimate,
+  };
+}
+
+// Shared helper — re-read the batch, apply a mutation, write back to both
+// approval_queue.full_output and agent_outputs.draft_content so the audit
+// trail stays consistent across both stores.
+async function mutateResearchBatch(params: {
+  parentQueueItemId: string;
+  parentOutputId: string;
+  mutate: (batch: ResearchBatch) => ResearchBatch;
+}): Promise<void> {
+  const db = supabaseAdmin();
+  const { data: item, error } = await db
+    .from('approval_queue')
+    .select('full_output')
+    .eq('id', params.parentQueueItemId)
+    .single();
+  if (error || !item) throw new Error('Parent queue item not found');
+  const next = params.mutate((item.full_output ?? {}) as ResearchBatch);
+  await db
+    .from('approval_queue')
+    .update({ full_output: next as unknown as Record<string, unknown> })
+    .eq('id', params.parentQueueItemId);
+  await db
+    .from('agent_outputs')
+    .update({ draft_content: next as unknown as Record<string, unknown> })
+    .eq('id', params.parentOutputId);
 }
 
 // Narrow export for the ThinkResult type consumers shouldn't re-import from base.
