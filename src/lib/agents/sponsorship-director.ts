@@ -111,7 +111,7 @@ function loadSponsorshipContextFiles(): string {
     loadContextFile('agents/sponsorship-director/system-prompt.md'),
     loadContextFile('agents/sponsorship-director/voice.md'),
     loadContextFile('agents/sponsorship-director/playbook.md'),
-    loadContextFile('agents/sponsorship-director/conflicts.md'),
+    loadContextFile('shared/conflicts.md'),
   ]
     .filter(Boolean)
     .join('\n\n---\n\n');
