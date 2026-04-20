@@ -24,6 +24,7 @@ export const env = {
     companiesDbId: process.env.NOTION_COMPANIES_DB_ID,
     contactsDbId: process.env.NOTION_CONTACTS_DB_ID,
     outreachDbId: process.env.NOTION_OUTREACH_DB,
+    fundingDbId: process.env.NOTION_FUNDING_DB_ID,
   },
   supabase: {
     url: required('NEXT_PUBLIC_SUPABASE_URL'),
@@ -36,5 +37,32 @@ export const env = {
   embedding: {
     model: process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small',
     dims: Number(process.env.EMBEDDING_DIMS ?? 1536),
+  },
+  analytics: {
+    // All optional — Analytics & Reporting degrades gracefully when a key is
+    // missing (platform gets marked "not configured" in the report).
+    posthogApiKey: process.env.POSTHOG_API_KEY,
+    posthogProjectId: process.env.POSTHOG_PROJECT_ID,
+    posthogHost: process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com',
+    convertkitApiKey: process.env.CONVERTKIT_API_KEY,
+    convertkitApiSecret: process.env.CONVERTKIT_API_SECRET,
+  },
+  googleOAuth: {
+    clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI,
+  },
+  github: {
+    // Read-only fine-grained PAT scoped to the 4 tracked repos. System Engineer
+    // degrades gracefully if missing — each repo is reported as "not configured."
+    pat: process.env.GITHUB_PAT,
+    repoAgentSystem: process.env.GITHUB_REPO_AGENT_SYSTEM,
+    repoDetto: process.env.GITHUB_REPO_DETTO,
+    repoTTS: process.env.GITHUB_REPO_TTS,
+    repoPersonalSite: process.env.GITHUB_REPO_PERSONAL_SITE,
+  },
+  vercel: {
+    token: process.env.VERCEL_TOKEN,
+    teamId: process.env.VERCEL_TEAM_ID,
   },
 };

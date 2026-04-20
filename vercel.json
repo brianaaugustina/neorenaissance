@@ -23,6 +23,26 @@
     {
       "path": "/api/agents/pr-director/research",
       "schedule": "0 14 * * 1"
+    },
+    {
+      "path": "/api/agents/analytics-reporting/monthly",
+      "schedule": "0 16 1 * *"
+    },
+    {
+      "path": "/api/agents/growth-strategist/monthly",
+      "schedule": "0 17 1 * *"
+    },
+    {
+      "path": "/api/agents/growth-strategist/quarterly",
+      "schedule": "0 15 1 1,4,7,10 *"
+    },
+    {
+      "path": "/api/agents/agent-supervisor/weekly",
+      "schedule": "0 13 * * 0"
+    },
+    {
+      "path": "/api/agents/system-engineer/weekly",
+      "schedule": "0 3 * * 0"
     }
   ]
 }

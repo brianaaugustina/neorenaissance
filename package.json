@@ -11,6 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
     "@notionhq/client": "^5.18.0",
+    "@octokit/rest": "^22.0.1",
     "@supabase/supabase-js": "^2.103.2",
     "dotenv": "^17.4.2",
     "isomorphic-dompurify": "^3.9.0",

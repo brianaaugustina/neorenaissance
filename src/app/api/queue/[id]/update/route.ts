@@ -2,29 +2,20 @@ import { NextResponse } from 'next/server';
 import { runOpsChiefDailyBriefing } from '@/lib/agents/ops-chief';
 import { runWeeklyPlanner } from '@/lib/agents/ops-chief-weekly';
 import {
-  extractShowrunnerInputs,
-  extractShowrunnerPreserved,
-  runShowrunner,
-  type ShowrunnerUpdateScope,
+  extractCaptionsInputs,
+  extractMetadataInputs,
+  extractSubstackInputs,
+  getShowrunnerOutputKind,
+  runShowrunnerEpisodeMetadata,
+  runShowrunnerSocialCaptions,
+  runShowrunnerSubstackPost,
 } from '@/lib/agents/showrunner';
 import { supabaseAdmin, type QueueStatus } from '@/lib/supabase/client';
 
-// Update endpoint — the replacement for Reject & Retry. Triggered by the
-// Update button on a queue card. Accepts scoped feedback and re-runs the
-// agent so the feedback is honored directly (not via the 14-day window
-// fallback), and — for multi-output agents like Showrunner — only the
-// affected sub-output is regenerated while the rest pass through
-// byte-identical.
-//
-// Old item is marked status='superseded' with a pointer to the new queue
-// id. It stays visible in history but the dashboard hides the approval
-// controls on it.
 export const maxDuration = 300;
 
 interface UpdateBody {
   feedback?: string;
-  /** Optional explicit scope. If omitted, the agent infers from feedback text. */
-  scope?: ShowrunnerUpdateScope | 'pitch' | 'research_batch';
 }
 
 export async function POST(
@@ -55,41 +46,64 @@ export async function POST(
     const agent = item.agent_name as string;
     const type = item.type as string;
 
-    // Showrunner draft — full multi-output scoped regen path.
     if (agent === 'showrunner' && type === 'draft') {
-      const inputs = extractShowrunnerInputs(item.full_output ?? {});
-      if (!inputs) {
+      const fullOutput = (item.full_output ?? {}) as Record<string, unknown>;
+      const kind = getShowrunnerOutputKind(fullOutput);
+
+      let dispatched: { queueId: string; kind: string } | null = null;
+      if (kind === 'substack_post') {
+        const inputs = extractSubstackInputs(fullOutput);
+        if (!inputs) return inputsMissingResponse();
+        const r = await runShowrunnerSubstackPost({
+          ...inputs,
+          trigger: 'manual',
+          updateFeedback: feedback,
+        });
+        dispatched = { queueId: r.queueId, kind };
+      } else if (kind === 'episode_metadata') {
+        const inputs = extractMetadataInputs(fullOutput);
+        if (!inputs) return inputsMissingResponse();
+        const r = await runShowrunnerEpisodeMetadata({
+          ...inputs,
+          trigger: 'manual',
+          updateFeedback: feedback,
+        });
+        dispatched = { queueId: r.queueId, kind };
+      } else if (kind === 'social_captions') {
+        const inputs = extractCaptionsInputs(fullOutput);
+        if (!inputs) return inputsMissingResponse();
+        const r = await runShowrunnerSocialCaptions({
+          ...inputs,
+          trigger: 'manual',
+          updateFeedback: feedback,
+        });
+        dispatched = { queueId: r.queueId, kind };
+      } else if (kind === 'legacy') {
         return NextResponse.json(
           {
             error:
-              "This Showrunner item predates the Update flow (transcript isn't stored on it). Upload the transcript again in the Run Showrunner box and add your feedback there.",
+              'This item was produced by the old combined Showrunner run. Re-run via the Substack / Titles / Captions tabs.',
           },
           { status: 400 },
         );
       }
-      const preserved = extractShowrunnerPreserved(item.full_output ?? {});
-      const scope = isShowrunnerScope(body.scope) ? body.scope : undefined;
-      const result = await runShowrunner({
-        ...inputs,
-        trigger: 'manual',
-        updateContext: { feedback, scope, preserved },
-      });
-      await markSuperseded(item.id, result.queueId, feedback);
+
+      if (!dispatched) {
+        return NextResponse.json(
+          { error: 'Could not resolve Showrunner output kind on this item.' },
+          { status: 400 },
+        );
+      }
+      await markSuperseded(item.id, dispatched.queueId, feedback);
       return NextResponse.json({
         ok: true,
-        newQueueId: result.queueId,
+        newQueueId: dispatched.queueId,
         agent: 'showrunner',
-        scope: scope ?? 'inferred',
+        kind: dispatched.kind,
       });
     }
 
-    // Ops Chief daily briefing — full regen with feedback stored on the old
-    // queue item; the next run picks it up via getRecentFeedback. Add a
-    // direct pass too so it's in the system prompt immediately.
     if (agent === 'ops_chief' && type === 'briefing') {
-      // Persist feedback on the old item so the next run's getRecentFeedback
-      // sees it. Briefings don't have a natural "preserve these sub-outputs"
-      // model — a new briefing is a full regen by nature.
       await db
         .from('approval_queue')
         .update({
@@ -125,29 +139,13 @@ export async function POST(
       });
     }
 
-    // Sponsorship + PR pitch drafts — single-output; feedback becomes a
-    // prompt constraint on a fresh pitch regen against the same lead. The
-    // old lead's context (brand_name, contact, fit, etc.) lives in the
-    // rejected item's full_output. We dispatch back to the lead-approval
-    // path with an 'updateFeedback' rider. Simpler for sub-step 1: drop
-    // back to the existing lead-regen — the prompt already accepts
-    // getRecentFeedback automatically; mark the old item rejected with
-    // feedback so the window query catches it, then trigger the lead
-    // approve on a clone of the lead data.
-    //
-    // For Pass A we return an explicit 'not yet supported' signal for
-    // these agents; their Update paths land in the follow-up commit once
-    // the lead-regen signature is extended to accept direct scoped
-    // feedback. Until then, the existing Approve/Reject flow on
-    // sponsorship/pr pitches remains.
     if (
       (agent === 'sponsorship-director' || agent === 'pr-director') &&
       (type === 'draft' || type === 'report')
     ) {
       return NextResponse.json(
         {
-          error:
-            `Update not yet wired for ${agent} / ${type}. Approve, Edit, or use Replace on the research batch for now.`,
+          error: `Update not yet wired for ${agent} / ${type}. Approve, Edit, or use Replace on the research batch for now.`,
         },
         { status: 400 },
       );
@@ -163,6 +161,16 @@ export async function POST(
   }
 }
 
+function inputsMissingResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "This item's inputs weren't stored on it. Re-run via the Showrunner tabs directly with the same inputs plus your feedback.",
+    },
+    { status: 400 },
+  );
+}
+
 async function markSuperseded(
   oldQueueItemId: string,
   newQueueItemId: string,
@@ -174,8 +182,7 @@ async function markSuperseded(
     .select('full_output')
     .eq('id', oldQueueItemId)
     .single();
-  const prevFullOutput =
-    (old?.full_output ?? {}) as Record<string, unknown>;
+  const prevFullOutput = (old?.full_output ?? {}) as Record<string, unknown>;
   await db
     .from('approval_queue')
     .update({
@@ -189,15 +196,4 @@ async function markSuperseded(
       },
     })
     .eq('id', oldQueueItemId);
-}
-
-function isShowrunnerScope(
-  s: unknown,
-): s is ShowrunnerUpdateScope {
-  return (
-    s === 'social_captions' ||
-    s === 'episode_metadata' ||
-    s === 'substack_post' ||
-    s === 'all'
-  );
 }

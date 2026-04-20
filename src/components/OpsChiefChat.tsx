@@ -129,7 +129,7 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
             >
               <div
                 className={
-                  'max-w-[85%] rounded-lg px-3 py-2 whitespace-pre-wrap ' +
+                  'max-w-[85%] px-3 py-2 whitespace-pre-wrap ' +
                   (m.role === 'user'
                     ? 'bg-white/5 border'
                     : 'border')
@@ -161,13 +161,13 @@ export function OpsChiefChat({ initialHistory }: OpsChiefChatProps) {
           placeholder="Push the Substack draft to Thursday…"
           rows={2}
           disabled={isPending}
-          className="flex-1 bg-transparent border rounded-lg px-3 py-3 md:py-2 text-sm resize-none disabled:opacity-40 min-h-[48px]"
+          className="flex-1 bg-transparent border px-3 py-3 md:py-2 text-sm resize-none disabled:opacity-40 min-h-[48px]"
           style={{ borderColor: 'var(--border)' }}
         />
         <button
           onClick={send}
           disabled={isPending || !input.trim()}
-          className="px-4 py-3 md:py-2 text-sm rounded-lg border transition disabled:opacity-40 min-h-[48px]"
+          className="px-4 py-3 md:py-2 text-sm border transition disabled:opacity-40 min-h-[48px]"
           style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
         >
           {isPending ? '…' : 'Send'}

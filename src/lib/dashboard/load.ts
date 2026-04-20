@@ -127,7 +127,7 @@ export async function loadDashboardData(): Promise<DashboardData> {
     safe('overdueTasks', () => getOverdueTasks(todayIso), [] as Task[], errors),
     safe('weekTasks', () => getWeekTasks(weekStartIso, weekEndIso), [] as Task[], errors),
     safe('initiatives', () => getInitiatives(), [] as Initiative[], errors),
-    safe('pendingQueue', () => getQueueItems('pending', 20), [] as any[], errors),
+    safe('pendingQueue', () => getQueueItems('pending', 100), [] as any[], errors),
     safe(
       'completedQueue',
       async () => [

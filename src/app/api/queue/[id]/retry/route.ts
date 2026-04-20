@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
 import { runOpsChiefDailyBriefing } from '@/lib/agents/ops-chief';
 import { runWeeklyPlanner } from '@/lib/agents/ops-chief-weekly';
-import { extractShowrunnerInputs, runShowrunner } from '@/lib/agents/showrunner';
+import {
+  extractCaptionsInputs,
+  extractMetadataInputs,
+  extractSubstackInputs,
+  getShowrunnerOutputKind,
+  runShowrunnerEpisodeMetadata,
+  runShowrunnerSocialCaptions,
+  runShowrunnerSubstackPost,
+} from '@/lib/agents/showrunner';
 import { supabaseAdmin } from '@/lib/supabase/client';
 
 export const maxDuration = 300;
 
 // Retry a rejected queue item by re-running the agent that produced it.
-// Assumes the caller already marked the original item rejected and wrote the
-// feedback into agent_memory.feedback_rules + approval_queue.feedback — the
-// next run will pick that up automatically via getRecentFeedback.
+// Feedback is picked up automatically via getRecentFeedback (14-day window).
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -29,36 +35,68 @@ export async function POST(
     const agent = item.agent_name as string;
     const type = item.type as string;
 
-    // Dispatch to the right agent runner based on agent + type
     if (agent === 'showrunner' && type === 'draft') {
-      const inputs = extractShowrunnerInputs(item.full_output ?? {});
-      if (!inputs) {
+      const fullOutput = (item.full_output ?? {}) as Record<string, unknown>;
+      const kind = getShowrunnerOutputKind(fullOutput);
+
+      const dispatchSubstack = async () => {
+        const inputs = extractSubstackInputs(fullOutput);
+        if (!inputs) return null;
+        const r = await runShowrunnerSubstackPost({ ...inputs, trigger: 'manual' });
+        return { queueId: r.queueId, title: `Showrunner — ${r.parsed.substackTitle || 'Substack post'}` };
+      };
+      const dispatchMetadata = async () => {
+        const inputs = extractMetadataInputs(fullOutput);
+        if (!inputs) return null;
+        const r = await runShowrunnerEpisodeMetadata({ ...inputs, trigger: 'manual' });
+        return { queueId: r.queueId, title: `Showrunner — ${r.parsed.youtubeTitle || 'Episode metadata'}` };
+      };
+      const dispatchCaptions = async () => {
+        const inputs = extractCaptionsInputs(fullOutput);
+        if (!inputs) return null;
+        const r = await runShowrunnerSocialCaptions({ ...inputs, trigger: 'manual' });
+        return { queueId: r.queueId, title: `Showrunner — Social captions (${r.parsed.clipCaptions.length})` };
+      };
+
+      let dispatched: { queueId: string; title: string } | null = null;
+      if (kind === 'substack_post') dispatched = await dispatchSubstack();
+      else if (kind === 'episode_metadata') dispatched = await dispatchMetadata();
+      else if (kind === 'social_captions') dispatched = await dispatchCaptions();
+      else if (kind === 'legacy') {
         return NextResponse.json(
           {
             error:
-              'This item was generated before retry was supported, so the transcript isn\'t stored on it. Your feedback is saved as a permanent rule — re-upload the transcript in the Run Showrunner box and the new run will apply your feedback automatically.',
+              'This item was produced by the old combined Showrunner run. Re-run via the Substack / Titles / Captions tabs directly.',
           },
           { status: 400 },
         );
       }
-      const result = await runShowrunner({ ...inputs, trigger: 'manual' });
-      // Stamp the new item as a retry_of for traceability without clobbering
-      // the full_output buildDeposit already wrote.
+
+      if (!dispatched) {
+        return NextResponse.json(
+          {
+            error:
+              "This item's inputs weren't stored on it. Re-run via the Showrunner tabs directly with the same inputs.",
+          },
+          { status: 400 },
+        );
+      }
+
       const { data: newItem } = await supabaseAdmin()
         .from('approval_queue')
         .select('full_output')
-        .eq('id', result.queueId)
+        .eq('id', dispatched.queueId)
         .single();
       await supabaseAdmin()
         .from('approval_queue')
         .update({
           full_output: { ...(newItem?.full_output ?? {}), retry_of_id: id },
         })
-        .eq('id', result.queueId);
+        .eq('id', dispatched.queueId);
       return NextResponse.json({
         ok: true,
-        newQueueId: result.queueId,
-        title: `Showrunner — ${result.parsed.episodeTitle || 'Episode Content Package'}`,
+        newQueueId: dispatched.queueId,
+        title: dispatched.title,
       });
     }
 

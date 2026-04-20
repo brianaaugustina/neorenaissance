@@ -1,98 +1,354 @@
 @import "tailwindcss";
 
 :root {
-  /* Luxury editorial control room — placeholder palette, refine on Day 4. */
-  --background: #0c0a07;
-  --surface:    #16130e;
-  --surface-2:  #1f1a12;
-  --border:     #2c2418;
-  --foreground: #f5ecd9;
-  --muted:      #a6997b;
-  --gold:       #c9a36a;
-  --gold-dim:   #8a6f42;
-  --danger:     #c96a6a;
-  --ok:         #8aae7b;
+  /* AGENT.DASH — warm beige + ink design system (2026-04-19 rebrand).
+   * oklch-based warm off-white background, near-black ink, hairline rules,
+   * zero colored accents. Variable names preserved for back-compat with
+   * existing inline styles (--gold now maps to --ink, --background to beige,
+   * etc.) so the whole app picks up the new palette automatically. */
+
+  /* Canonical design tokens */
+  --bg:          oklch(0.955 0.012 85);
+  --bg-2:        oklch(0.935 0.014 85);
+  --bg-3:        oklch(0.915 0.016 85);
+  --ink:         oklch(0.15 0.01 85);
+  --ink-2:       oklch(0.35 0.01 85);
+  --ink-3:       oklch(0.55 0.01 85);
+  --ink-4:       oklch(0.72 0.01 85);
+  --rule:        oklch(0.15 0.01 85 / 0.18);
+  --rule-strong: oklch(0.15 0.01 85 / 0.9);
+  --hover:       oklch(0.15 0.01 85 / 0.04);
+  --font-mono:   "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* Back-compat aliases — every existing component that references these
+   * still works; it picks up the new palette automatically. --gold becomes
+   * ink (primary accent in the new system is near-black); --background
+   * becomes warm beige; --muted becomes mid-gray. */
+  --background: var(--bg);
+  --surface:    var(--bg);
+  --surface-2:  var(--bg-2);
+  --border:     var(--rule);
+  --foreground: var(--ink);
+  --muted:      var(--ink-3);
+  --gold:       var(--ink);
+  --gold-dim:   var(--ink-2);
+  --danger:     oklch(0.46 0.18 25);
+  --ok:         oklch(0.42 0.08 150);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-border: var(--border);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-gold: var(--gold);
-  --color-gold-dim: var(--gold-dim);
+  --color-background: var(--bg);
+  --color-surface: var(--bg);
+  --color-surface-2: var(--bg-2);
+  --color-border: var(--rule);
+  --color-foreground: var(--ink);
+  --color-muted: var(--ink-3);
+  --color-gold: var(--ink);
+  --color-gold-dim: var(--ink-2);
   --color-danger: var(--danger);
   --color-ok: var(--ok);
   --font-serif: var(--font-serif);
   --font-sans:  var(--font-sans);
+  --font-mono:  var(--font-mono);
 }
 
 html, body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--ink);
 }
 
 body {
-  font-family: var(--font-sans), -apple-system, system-ui, sans-serif;
+  font-family: var(--font-sans), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-feature-settings: "ss01", "cv11";
 }
 
-h1, h2, h3, .serif {
+/* Headings default to sans per the design system. .serif class opts back in
+ * to Fraunces when a specific piece needs it (rare; kept as escape hatch). */
+h1, h2, h3, h4 {
+  font-family: var(--font-sans), "Inter", sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.serif {
   font-family: var(--font-serif), Georgia, serif;
-  font-weight: 400;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+/* ============================================================
+ * Shared typography + utility classes (mirror design spec)
+ * ============================================================ */
+.mono { font-family: var(--font-mono); }
+.uc { text-transform: uppercase; letter-spacing: 0.14em; font-size: 10px; font-weight: 500; }
+.muted { color: var(--ink-3); }
+.muted-2 { color: var(--ink-2); }
+.gold { color: var(--ink); } /* back-compat: gold class now = ink */
+.tr { text-align: right; }
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+.title {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  margin: 0;
+  color: var(--ink);
+}
+.title .count {
+  font-size: 28px;
+  font-weight: 500;
   letter-spacing: -0.01em;
+  vertical-align: super;
+  margin-left: 6px;
+  color: var(--ink-2);
 }
 
+.sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  line-height: 1.6;
+  max-width: 640px;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 8px;
+}
+.section-head .tag {
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  text-transform: none;
+}
+
+/* ============================================================
+ * Buttons + chips + filters — AGENT.DASH design language
+ * ============================================================ */
+.btn {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+  text-decoration: none;
+  display: inline-block;
+  border-radius: 0;
+}
+.btn:hover { background: var(--ink); color: var(--bg); }
+.btn.primary { background: var(--ink); color: var(--bg); }
+.btn.primary:hover { background: transparent; color: var(--ink); }
+.btn.ghost { border-color: var(--rule); color: var(--ink-2); }
+.btn.ghost:hover { border-color: var(--ink); color: var(--ink); background: transparent; }
+.btn.sm { padding: 4px 10px; font-size: 10px; }
+
+.chip {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--rule-strong);
+  font-weight: 500;
+  font-family: var(--font-mono);
+  border-radius: 0;
+}
+.chip.filled { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip.dot::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--ink);
+  border-radius: 50%;
+  margin-right: 6px;
+  transform: translateY(-1px);
+  animation: pulse 1.4s infinite;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0;
+}
+.fbtn {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-weight: 500;
+  border-radius: 0;
+}
+.fbtn:hover { border-color: var(--ink); color: var(--ink); }
+.fbtn.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+/* ============================================================
+ * Cards — retained for back-compat, now rectangular with hairline border
+ * ============================================================ */
 .card {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  backdrop-filter: blur(8px);
+  background: var(--bg);
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  backdrop-filter: none;
+  padding: 20px;
+}
+.card.soft { border-color: var(--rule); }
+
+/* Pulse animation used by .chip.dot + live indicators */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
-.gold { color: var(--gold); }
-.muted { color: var(--muted); }
+/* Universal card hover state — visible warm light-gray fill. Applied to
+ * to-do cards, queue rows, output cards, and any other interactive surface.
+ * Base background set here so inline styles don't override the hover rule. */
+.dash-card {
+  background: var(--bg);
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.dash-card:hover {
+  background: var(--bg-3);
+  border-color: var(--ink);
+}
+a.dash-card:hover,
+button.dash-card:hover {
+  transform: translateY(-1px);
+}
 
-/* Subtle scrollbar */
+/* ============================================================
+ * Shared top nav
+ * ============================================================ */
+nav.topnav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 18px 40px;
+  border-bottom: 1px solid var(--rule-strong);
+  gap: 40px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+nav.topnav .brand {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+nav.topnav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 28px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+nav.topnav a {
+  color: var(--ink-2);
+  text-decoration: none;
+  padding-bottom: 3px;
+  border-bottom: 1px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+}
+nav.topnav a:hover { color: var(--ink); }
+nav.topnav a.active { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+nav.topnav .meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-2);
+  letter-spacing: 0.05em;
+  text-align: right;
+  line-height: 1.6;
+}
+nav.topnav .meta .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--ink);
+  border-radius: 50%;
+  margin-right: 6px;
+  animation: pulse 1.8s infinite;
+}
+
+/* ============================================================
+ * Scrollbar (kept minimal)
+ * ============================================================ */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+*::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 0; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* Ops Chief daily briefing — HTML rendered via dangerouslySetInnerHTML.
-   Tailwind v4 doesn't have the typography plugin here, so we style the
-   briefing body explicitly. Scannable hierarchy, no bullets on purpose
-   inside headers. */
+/* ============================================================
+ * Ops Chief briefing prose styling — retained for queue/output surfaces
+ * ============================================================ */
 .briefing-body p {
   margin: 0.5rem 0;
   line-height: 1.55;
-  color: var(--foreground);
+  color: var(--ink);
 }
 .briefing-body h1,
 .briefing-body h2,
 .briefing-body h3 {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 500;
-  color: var(--foreground);
-  letter-spacing: -0.01em;
+  font-family: var(--font-sans), "Inter", sans-serif;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.015em;
 }
 .briefing-body h2 {
   font-size: 1.05rem;
   margin: 1.1rem 0 0.5rem;
   padding-bottom: 0.25rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--rule);
 }
 .briefing-body h3 {
   font-size: 0.95rem;
   margin: 0.75rem 0 0.25rem;
-  color: var(--gold);
+  color: var(--ink-2);
 }
 .briefing-body strong {
-  color: var(--gold);
+  color: var(--ink);
   font-weight: 600;
 }
-.briefing-body em { color: var(--muted); font-style: italic; }
+.briefing-body em { color: var(--ink-3); font-style: italic; }
 .briefing-body ul, .briefing-body ol {
   padding-left: 1.1rem;
   margin: 0.4rem 0;
@@ -104,7 +360,7 @@ h1, h2, h3, .serif {
   line-height: 1.5;
 }
 .briefing-body a {
-  color: var(--gold);
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 2px;
 }

@@ -2,14 +2,14 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Neorenaissance',
-    short_name: 'Neorenaissance',
+    name: 'Agent.os',
+    short_name: 'Agent.os',
     description: "Briana's agentic operating interface",
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#ffffff',
-    theme_color: '#0c0a07',
+    background_color: '#f0e9d9',
+    theme_color: '#f0e9d9',
     icons: [
       {
         src: '/icon',

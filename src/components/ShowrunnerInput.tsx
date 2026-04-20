@@ -3,6 +3,9 @@
 import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
+type Tab = 'substack' | 'metadata' | 'captions';
+type EpisodeType = 'solo' | 'interview';
+
 interface ClipRow {
   description: string;
   publishDate: string;
@@ -12,15 +15,65 @@ interface ClipRow {
 const DEFAULT_PLATFORMS = ['IN@tradesshow', 'TIKTOK@tradesshow', 'LI@brianaottoboni'];
 
 export function ShowrunnerInput() {
+  const [tab, setTab] = useState<Tab>('substack');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b" style={{ borderColor: 'var(--rule)' }}>
+        {(['substack', 'metadata', 'captions'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="px-3 py-2 text-sm transition"
+            style={{
+              borderBottom:
+                tab === t ? '2px solid var(--ink)' : '2px solid transparent',
+              color: tab === t ? 'var(--ink)' : 'var(--muted)',
+              marginBottom: '-1px',
+            }}
+          >
+            {t === 'substack'
+              ? 'Substack post'
+              : t === 'metadata'
+                ? 'Title & description'
+                : 'Social captions'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'substack' && <SubstackForm />}
+      {tab === 'metadata' && <MetadataForm />}
+      {tab === 'captions' && <CaptionsForm />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared field styles
+// ---------------------------------------------------------------------------
+const fieldStyle = { borderRadius: 0, borderColor: 'var(--rule)' } as const;
+const buttonStyle = {
+  borderRadius: 0,
+  borderColor: 'var(--ink)',
+  color: 'var(--ink)',
+} as const;
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-xs muted uppercase tracking-wider">{children}</span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Substack post form
+// ---------------------------------------------------------------------------
+function SubstackForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  // v2 default: Guest interview. Solo moved to a toggle at the bottom.
-  const [episodeType, setEpisodeType] = useState<'solo' | 'interview'>('interview');
+  const [episodeType, setEpisodeType] = useState<EpisodeType>('interview');
   const [transcript, setTranscript] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestLinks, setGuestLinks] = useState('');
-  const [timestampedOutline, setTimestampedOutline] = useState('');
-  const [clips, setClips] = useState<ClipRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,13 +92,156 @@ export function ShowrunnerInput() {
     reader.readAsText(file);
   };
 
-  const addClip = () =>
-    setClips((prev) => [...prev, { description: '', publishDate: '', file: null }]);
+  const submit = () => {
+    if (!transcript.trim() || wordCount < 100) {
+      setError('Transcript must be at least 100 words.');
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch('/api/agents/showrunner/substack/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript,
+            episodeType,
+            guestName: guestName.trim() || undefined,
+            guestLinks: guestLinks.trim() || undefined,
+          }),
+        });
+        const raw = await res.text();
+        let data: { error?: string; substackTitle?: string } = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200)}`);
+        }
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setSuccess(`Done — "${data.substackTitle || 'Substack post'}" queued.`);
+        setTranscript('');
+        setGuestName('');
+        setGuestLinks('');
+        if (fileRef.current) fileRef.current.value = '';
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
 
-  const updateClip = (i: number, patch: Partial<ClipRow>) =>
-    setClips((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  return (
+    <div className="space-y-3">
+      <p className="text-xs muted">
+        Drafts the Substack post from the episode transcript. One queue item per run.
+      </p>
 
-  const removeClip = (i: number) => setClips((prev) => prev.filter((_, idx) => idx !== i));
+      <textarea
+        value={transcript}
+        onChange={(e) => {
+          setTranscript(e.target.value);
+          setSuccess(null);
+          setError(null);
+        }}
+        placeholder="Paste episode transcript here..."
+        rows={6}
+        className="w-full bg-transparent border px-3 py-2 text-sm resize-y"
+        style={fieldStyle}
+        disabled={isPending}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <label
+          className="px-3 py-1.5 text-xs border cursor-pointer transition"
+          style={{ ...fieldStyle, color: 'var(--muted)' }}
+        >
+          Upload .txt / .md / .srt
+          <input
+            ref={fileRef}
+            type="file"
+            accept="text/plain,text/markdown,text/*,.txt,.md,.srt,.text,.vtt"
+            onChange={handleTranscriptFile}
+            className="hidden"
+            disabled={isPending}
+          />
+        </label>
+        {wordCount > 0 && (
+          <span className="text-xs muted">{wordCount.toLocaleString()} words</span>
+        )}
+      </div>
+
+      {episodeType === 'interview' && (
+        <div
+          className="space-y-2 pt-2 border-t"
+          style={{ borderColor: 'var(--rule)' }}
+        >
+          <SectionLabel>Guest</SectionLabel>
+          <input
+            type="text"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            placeholder="Guest name"
+            className="w-full bg-transparent border px-3 py-2 text-sm"
+            style={fieldStyle}
+            disabled={isPending}
+          />
+          <textarea
+            value={guestLinks}
+            onChange={(e) => setGuestLinks(e.target.value)}
+            placeholder="Guest links — one per line"
+            rows={3}
+            className="w-full bg-transparent border px-3 py-2 text-sm resize-y"
+            style={fieldStyle}
+            disabled={isPending}
+          />
+        </div>
+      )}
+
+      <SoloToggle episodeType={episodeType} setEpisodeType={setEpisodeType} disabled={isPending} />
+
+      <button
+        onClick={submit}
+        disabled={isPending || wordCount < 100}
+        className="ml-auto px-4 py-2 text-sm border transition disabled:opacity-40 min-h-[36px] block"
+        style={buttonStyle}
+      >
+        {isPending ? 'Running…' : 'Run agent'}
+      </button>
+
+      {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
+      {success && <p className="text-xs" style={{ color: 'var(--ok)' }}>{success}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Title & description form
+// ---------------------------------------------------------------------------
+function MetadataForm() {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [episodeType, setEpisodeType] = useState<EpisodeType>('interview');
+  const [transcript, setTranscript] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestLinks, setGuestLinks] = useState('');
+  const [timestampedOutline, setTimestampedOutline] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const wordCount = transcript.trim() ? transcript.trim().split(/\s+/).length : 0;
+
+  const handleTranscriptFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTranscript(reader.result as string);
+      setSuccess(null);
+      setError(null);
+    };
+    reader.readAsText(file);
+  };
 
   const submit = () => {
     if (!transcript.trim() || wordCount < 100) {
@@ -54,23 +250,181 @@ export function ShowrunnerInput() {
     }
     setError(null);
     setSuccess(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch('/api/agents/showrunner/metadata/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript,
+            episodeType,
+            guestName: guestName.trim() || undefined,
+            guestLinks: guestLinks.trim() || undefined,
+            timestampedOutline: timestampedOutline.trim() || undefined,
+          }),
+        });
+        const raw = await res.text();
+        let data: { error?: string; youtubeTitle?: string } = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200)}`);
+        }
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        setSuccess(`Done — "${data.youtubeTitle || 'Episode metadata'}" queued.`);
+        setTranscript('');
+        setGuestName('');
+        setGuestLinks('');
+        setTimestampedOutline('');
+        if (fileRef.current) fileRef.current.value = '';
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs muted">
+        Drafts YouTube title, Spotify title, and shared episode description from the transcript.
+      </p>
+
+      <textarea
+        value={transcript}
+        onChange={(e) => {
+          setTranscript(e.target.value);
+          setSuccess(null);
+          setError(null);
+        }}
+        placeholder="Paste episode transcript here..."
+        rows={6}
+        className="w-full bg-transparent border px-3 py-2 text-sm resize-y"
+        style={fieldStyle}
+        disabled={isPending}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <label
+          className="px-3 py-1.5 text-xs border cursor-pointer transition"
+          style={{ ...fieldStyle, color: 'var(--muted)' }}
+        >
+          Upload .txt / .md / .srt
+          <input
+            ref={fileRef}
+            type="file"
+            accept="text/plain,text/markdown,text/*,.txt,.md,.srt,.text,.vtt"
+            onChange={handleTranscriptFile}
+            className="hidden"
+            disabled={isPending}
+          />
+        </label>
+        {wordCount > 0 && (
+          <span className="text-xs muted">{wordCount.toLocaleString()} words</span>
+        )}
+      </div>
+
+      {episodeType === 'interview' && (
+        <div
+          className="space-y-2 pt-2 border-t"
+          style={{ borderColor: 'var(--rule)' }}
+        >
+          <SectionLabel>Guest</SectionLabel>
+          <input
+            type="text"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            placeholder="Guest name"
+            className="w-full bg-transparent border px-3 py-2 text-sm"
+            style={fieldStyle}
+            disabled={isPending}
+          />
+          <textarea
+            value={guestLinks}
+            onChange={(e) => setGuestLinks(e.target.value)}
+            placeholder="Guest links — one per line"
+            rows={3}
+            className="w-full bg-transparent border px-3 py-2 text-sm resize-y"
+            style={fieldStyle}
+            disabled={isPending}
+          />
+        </div>
+      )}
+
+      <div className="space-y-2 pt-2 border-t" style={{ borderColor: 'var(--rule)' }}>
+        <SectionLabel>
+          Timestamped outline{' '}
+          <span className="muted" style={{ opacity: 0.5 }}>
+            (optional — leave empty to auto-generate)
+          </span>
+        </SectionLabel>
+        <textarea
+          value={timestampedOutline}
+          onChange={(e) => setTimestampedOutline(e.target.value)}
+          placeholder={`Chapter markers, one per line:\n00:00 Intro\n01:25 Topic A\n...`}
+          rows={4}
+          className="w-full bg-transparent border px-3 py-2 text-sm resize-y font-mono"
+          style={fieldStyle}
+          disabled={isPending}
+        />
+      </div>
+
+      <SoloToggle episodeType={episodeType} setEpisodeType={setEpisodeType} disabled={isPending} />
+
+      <button
+        onClick={submit}
+        disabled={isPending || wordCount < 100}
+        className="ml-auto px-4 py-2 text-sm border transition disabled:opacity-40 min-h-[36px] block"
+        style={buttonStyle}
+      >
+        {isPending ? 'Running…' : 'Run agent'}
+      </button>
+
+      {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
+      {success && <p className="text-xs" style={{ color: 'var(--ok)' }}>{success}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Social captions form — clips-only, no full transcript
+// ---------------------------------------------------------------------------
+function CaptionsForm() {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [episodeType, setEpisodeType] = useState<EpisodeType>('interview');
+  const [episodeContextNote, setEpisodeContextNote] = useState('');
+  const [clips, setClips] = useState<ClipRow[]>([
+    { description: '', publishDate: '', file: null },
+  ]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const addClip = () =>
+    setClips((prev) => [...prev, { description: '', publishDate: '', file: null }]);
+  const updateClip = (i: number, patch: Partial<ClipRow>) =>
+    setClips((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const removeClip = (i: number) =>
+    setClips((prev) => prev.filter((_, idx) => idx !== i));
+
+  const submit = () => {
+    const activeClips = clips.filter((c) => c.description.trim());
+    if (activeClips.length === 0) {
+      setError('At least one clip (with description) is required.');
+      return;
+    }
+    setError(null);
+    setSuccess(null);
 
     startTransition(async () => {
       try {
-        const activeClips = clips.filter((c) => c.description.trim());
         const hasFiles = activeClips.some((c) => c.file);
         let res: Response;
 
         if (hasFiles) {
-          // Multipart path — each clip file attached with a unique field name
-          // the server route looks up via clips[i].fileFieldName.
           const form = new FormData();
-          form.append('transcript', transcript);
           form.append('episodeType', episodeType);
-          if (guestName.trim()) form.append('guestName', guestName.trim());
-          if (guestLinks.trim()) form.append('guestLinks', guestLinks.trim());
-          if (timestampedOutline.trim())
-            form.append('timestampedOutline', timestampedOutline.trim());
+          if (episodeContextNote.trim())
+            form.append('episodeContextNote', episodeContextNote.trim());
 
           const clipsPayload = activeClips.map((c, i) => {
             const fieldName = `clipFile_${i}`;
@@ -84,20 +438,17 @@ export function ShowrunnerInput() {
           });
           form.append('clips', JSON.stringify(clipsPayload));
 
-          res = await fetch('/api/agents/showrunner/run', {
+          res = await fetch('/api/agents/showrunner/captions/run', {
             method: 'POST',
-            body: form, // browser sets multipart boundary
+            body: form,
           });
         } else {
-          res = await fetch('/api/agents/showrunner/run', {
+          res = await fetch('/api/agents/showrunner/captions/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              transcript,
               episodeType,
-              guestName: guestName.trim() || undefined,
-              guestLinks: guestLinks.trim() || undefined,
-              timestampedOutline: timestampedOutline.trim() || undefined,
+              episodeContextNote: episodeContextNote.trim() || undefined,
               clips: activeClips.map((c) => ({
                 description: c.description.trim(),
                 publishDate: c.publishDate || undefined,
@@ -108,22 +459,18 @@ export function ShowrunnerInput() {
         }
 
         const raw = await res.text();
-        let data: { error?: string; episodeTitle?: string; captionCount?: number } = {};
+        let data: { error?: string; captionCount?: number } = {};
         try {
           data = raw ? JSON.parse(raw) : {};
         } catch {
-          throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200) || res.statusText}`);
+          throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200)}`);
         }
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         setSuccess(
-          `Done — "${data.episodeTitle || 'Content package'}" queued with ${data.captionCount} clip caption${data.captionCount === 1 ? '' : 's'}.`,
+          `Done — ${data.captionCount} caption${data.captionCount === 1 ? '' : 's'} queued.`,
         );
-        setTranscript('');
-        setGuestName('');
-        setGuestLinks('');
-        setTimestampedOutline('');
-        setClips([]);
-        if (fileRef.current) fileRef.current.value = '';
+        setClips([{ description: '', publishDate: '', file: null }]);
+        setEpisodeContextNote('');
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed');
@@ -133,132 +480,75 @@ export function ShowrunnerInput() {
 
   return (
     <div className="space-y-3">
-      <textarea
-        value={transcript}
-        onChange={(e) => {
-          setTranscript(e.target.value);
-          setSuccess(null);
-          setError(null);
-        }}
-        placeholder="Paste episode transcript here..."
-        rows={6}
-        className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
-        style={{ borderColor: 'var(--border)' }}
-        disabled={isPending}
-      />
+      <p className="text-xs muted">
+        Writes one caption per clip. Each clip needs its own description / transcript;
+        attach the video file here and it stays in Showrunner storage until you schedule.
+      </p>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label
-          className="px-3 py-1.5 text-xs rounded-md border cursor-pointer hover:bg-white/5 transition"
-          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
-        >
-          Upload .txt / .md / .srt
-          <input
-            ref={fileRef}
-            type="file"
-            accept="text/plain,text/markdown,text/*,.txt,.md,.srt,.text,.vtt"
-            onChange={handleTranscriptFile}
-            className="hidden"
-            disabled={isPending}
-          />
-        </label>
-
-        {wordCount > 0 && (
-          <span className="text-xs muted">{wordCount.toLocaleString()} words</span>
-        )}
-      </div>
-
-      {/* Guest fields — only for interview episodes */}
-      {episodeType === 'interview' && (
-        <div className="space-y-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-          <span className="text-xs muted uppercase tracking-wider">Guest</span>
-          <input
-            type="text"
-            value={guestName}
-            onChange={(e) => setGuestName(e.target.value)}
-            placeholder="Guest name (e.g. Sarah Larson, founder of Often Wander)"
-            className="w-full bg-transparent border rounded-md px-3 py-2 text-sm"
-            style={{ borderColor: 'var(--border)' }}
-            disabled={isPending}
-          />
-          <textarea
-            value={guestLinks}
-            onChange={(e) => setGuestLinks(e.target.value)}
-            placeholder={`Guest links — one per line, reproduced verbatim in the description:\nhttps://oftenwander.com/\n/ oftenwander`}
-            rows={3}
-            className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
-            style={{ borderColor: 'var(--border)' }}
-            disabled={isPending}
-          />
-        </div>
-      )}
-
-      {/* Timestamped outline */}
-      <div className="space-y-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-        <span className="text-xs muted uppercase tracking-wider">
-          Timestamped outline <span className="muted" style={{ opacity: 0.5 }}>(optional — leave empty to auto-generate)</span>
-        </span>
-        <textarea
-          value={timestampedOutline}
-          onChange={(e) => setTimestampedOutline(e.target.value)}
-          placeholder={`Paste chapter markers, one per line:\n00:00 Manifestation and the Birth of Often Wander\n01:25 Introducing Sarah Larson\n...`}
-          rows={4}
-          className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y font-mono"
-          style={{ borderColor: 'var(--border)' }}
+      <div className="space-y-2">
+        <SectionLabel>
+          Episode context note{' '}
+          <span className="muted" style={{ opacity: 0.5 }}>
+            (optional — tone alignment only, not the full transcript)
+          </span>
+        </SectionLabel>
+        <input
+          type="text"
+          value={episodeContextNote}
+          onChange={(e) => setEpisodeContextNote(e.target.value)}
+          placeholder="e.g. Episode is about craftsmanship in the age of AI"
+          className="w-full bg-transparent border px-3 py-2 text-sm"
+          style={fieldStyle}
           disabled={isPending}
         />
       </div>
 
-      {/* Clips list */}
-      <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+      <div className="pt-2 border-t" style={{ borderColor: 'var(--rule)' }}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs muted uppercase tracking-wider">Clips (optional)</span>
+          <SectionLabel>Clips</SectionLabel>
           <button
             onClick={addClip}
             disabled={isPending}
-            className="text-xs gold hover:underline"
+            className="text-xs hover:underline"
+            style={{ color: 'var(--ink)' }}
             type="button"
           >
             + Add clip
           </button>
         </div>
 
-        {clips.length === 0 && (
-          <p className="text-xs muted">
-            Add clips to have Showrunner write one social caption per clip. Attach the video file here — it stays in Showrunner storage until you schedule, then moves to Notion.
-          </p>
-        )}
-
         {clips.map((clip, i) => (
           <div
             key={i}
-            className="space-y-2 border rounded-md p-3 mb-2"
-            style={{ borderColor: 'var(--border)' }}
+            className="space-y-2 border p-3 mb-2"
+            style={{ borderColor: 'var(--rule)' }}
           >
             <div className="flex items-center justify-between">
               <span className="text-xs muted">Clip {i + 1}</span>
-              <button
-                onClick={() => removeClip(i)}
-                disabled={isPending}
-                className="text-xs muted hover:text-white/80"
-                type="button"
-              >
-                Remove
-              </button>
+              {clips.length > 1 && (
+                <button
+                  onClick={() => removeClip(i)}
+                  disabled={isPending}
+                  className="text-xs muted hover:opacity-80"
+                  type="button"
+                >
+                  Remove
+                </button>
+              )}
             </div>
             <textarea
               value={clip.description}
               onChange={(e) => updateClip(i, { description: e.target.value })}
-              placeholder="Paste the clip transcript (Showrunner reads this to write the caption)"
+              placeholder="Paste the clip transcript / description (Showrunner reads this to write the caption)"
               rows={3}
-              className="w-full bg-transparent border rounded-md px-3 py-2 text-sm resize-y"
-              style={{ borderColor: 'var(--border)' }}
+              className="w-full bg-transparent border px-3 py-2 text-sm resize-y"
+              style={fieldStyle}
               disabled={isPending}
             />
             <div className="flex flex-wrap items-center gap-3">
               <label
-                className="px-3 py-1.5 text-xs rounded-md border cursor-pointer hover:bg-white/5 transition"
-                style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+                className="px-3 py-1.5 text-xs border cursor-pointer transition"
+                style={{ ...fieldStyle, color: 'var(--muted)' }}
               >
                 {clip.file ? `📎 ${clip.file.name}` : 'Upload clip video'}
                 <input
@@ -276,53 +566,68 @@ export function ShowrunnerInput() {
                   onClick={() => updateClip(i, { file: null })}
                   disabled={isPending}
                   type="button"
-                  className="text-xs muted hover:text-white/80"
+                  className="text-xs muted hover:opacity-80"
                 >
                   Clear file
                 </button>
               )}
+              <input
+                type="date"
+                value={clip.publishDate}
+                onChange={(e) => updateClip(i, { publishDate: e.target.value })}
+                disabled={isPending}
+                className="bg-transparent border px-2 py-1 text-xs"
+                style={fieldStyle}
+              />
             </div>
           </div>
         ))}
       </div>
 
-      {/* Solo toggle — v2 default is Guest interview. Check this for solo episodes. */}
-      <div
-        className="flex items-center gap-2 pt-2 border-t"
-        style={{ borderColor: 'var(--border)' }}
-      >
-        <input
-          id="solo-toggle"
-          type="checkbox"
-          checked={episodeType === 'solo'}
-          onChange={(e) => setEpisodeType(e.target.checked ? 'solo' : 'interview')}
-          className="accent-[var(--gold)]"
-          disabled={isPending}
-        />
-        <label htmlFor="solo-toggle" className="text-xs muted cursor-pointer">
-          Solo episode (uncheck for guest interview)
-        </label>
-      </div>
+      <SoloToggle episodeType={episodeType} setEpisodeType={setEpisodeType} disabled={isPending} />
 
       <button
         onClick={submit}
-        disabled={isPending || wordCount < 100}
-        className="ml-auto px-4 py-2 text-sm rounded-md border hover:bg-white/5 transition disabled:opacity-40 min-h-[36px] block"
-        style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+        disabled={isPending || clips.every((c) => !c.description.trim())}
+        className="ml-auto px-4 py-2 text-sm border transition disabled:opacity-40 min-h-[36px] block"
+        style={buttonStyle}
       >
-        {isPending ? 'Running...' : 'Run Showrunner'}
+        {isPending ? 'Running…' : 'Run agent'}
       </button>
 
-      {error && (
-        <p className="text-xs" style={{ color: 'var(--danger)' }}>
-          {error}
-        </p>
-      )}
-      {success && (
-        <p className="text-xs" style={{ color: 'var(--ok)' }}>
-          {success}
-        </p>
-      )}
+      {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
+      {success && <p className="text-xs" style={{ color: 'var(--ok)' }}>{success}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared solo toggle
+// ---------------------------------------------------------------------------
+function SoloToggle({
+  episodeType,
+  setEpisodeType,
+  disabled,
+}: {
+  episodeType: EpisodeType;
+  setEpisodeType: (t: EpisodeType) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 pt-2 border-t"
+      style={{ borderColor: 'var(--rule)' }}
+    >
+      <input
+        id="solo-toggle"
+        type="checkbox"
+        checked={episodeType === 'solo'}
+        onChange={(e) => setEpisodeType(e.target.checked ? 'solo' : 'interview')}
+        disabled={disabled}
+      />
+      <label htmlFor="solo-toggle" className="text-xs muted cursor-pointer">
+        Solo episode (uncheck for guest interview)
+      </label>
     </div>
   );
 }

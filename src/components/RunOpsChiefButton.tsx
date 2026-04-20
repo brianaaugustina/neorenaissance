@@ -40,23 +40,25 @@ export function RunOpsChiefButton() {
         <button
           onClick={run}
           disabled={isPending}
-          className="px-4 py-2 text-sm rounded-lg border transition disabled:opacity-40"
+          className="px-4 py-2 text-sm border transition disabled:opacity-40"
           style={{
-            borderColor: 'var(--gold)',
-            color: 'var(--gold)',
-            background: isPending ? 'var(--surface-2)' : 'transparent',
+            borderRadius: 0,
+            borderColor: 'var(--ink)',
+            color: 'var(--ink)',
+            background: isPending ? 'var(--bg-2)' : 'transparent',
           }}
         >
-          {isPending ? 'Running…' : 'Run Ops Chief'}
+          {isPending ? 'Running…' : 'Run agent'}
         </button>
         <button
           onClick={runWeekly}
           disabled={isPending}
-          className="px-4 py-2 text-sm rounded-lg border transition disabled:opacity-40"
+          className="px-4 py-2 text-sm border transition disabled:opacity-40"
           style={{
-            borderColor: 'var(--border)',
-            color: 'var(--muted)',
-            background: isPending ? 'var(--surface-2)' : 'transparent',
+            borderRadius: 0,
+            borderColor: 'var(--rule)',
+            color: 'var(--ink-2)',
+            background: isPending ? 'var(--bg-2)' : 'transparent',
           }}
         >
           Weekly Plan

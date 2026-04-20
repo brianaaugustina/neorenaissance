@@ -874,6 +874,43 @@ export async function getContentEntriesForWeek(
   }));
 }
 
+// Scheduled-content view for the /schedule page. Unlike the showrunner daily
+// check, this includes published + done items so the calendar reflects the
+// whole picture — work already shipped and work still due.
+export interface ScheduledContentEntry {
+  id: string;
+  title: string;
+  status: string | null;
+  contentType: string[];
+  platforms: string[];
+  publishDate: string | null;
+}
+
+export async function getScheduledContentInWindow(
+  startIso: string,
+  endIso: string,
+): Promise<ScheduledContentEntry[]> {
+  const contentDbId = env.notion.contentDbId;
+  if (!contentDbId) return [];
+  const res: any = await queryDs(contentDbId, {
+    filter: {
+      and: [
+        { property: 'Time', date: { on_or_after: startIso } },
+        { property: 'Time', date: { on_or_before: endIso } },
+      ],
+    },
+    page_size: 100,
+  });
+  return res.results.map((page: any) => ({
+    id: page.id,
+    title: getTitle(page),
+    status: getSelect(page, 'Status'),
+    contentType: getMultiSelect(page, 'Content Type'),
+    platforms: getMultiSelect(page, 'Platforms'),
+    publishDate: getDate(page, 'Time'),
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Notion file uploads — two-step flow: create upload, then send file bytes.
 // Returns the file_upload_id to reference in a page's Files property.
@@ -1031,4 +1068,199 @@ export async function createContentEntry(params: CreateContentParams): Promise<s
     properties: properties as any,
   });
   return res.id as string;
+}
+
+// ---------------------------------------------------------------------------
+// Funding Scout — Funding Opportunities DB (Notion)
+// Schema (introspected + extended 2026-04-19):
+//   Opportunity Name (title), Funder (rich_text), Funding Type (select),
+//   Funding Amount (number), Application Deadline (date),
+//   Status (select: approved|drafted|ready to apply|applied|awarded|declined|withdrawn),
+//   Venture (multi_select), Effort Estimate (select: low/medium/high),
+//   Match Rating (number), Reason for rating/match (rich_text),
+//   Eligibility Criteria (rich_text), Source URL (url), Notes (rich_text),
+//   Drafted Application (files).
+// Only approved opportunities enter this DB. Rejected ones stay in
+// agent_outputs. Status is the source of truth for gate state.
+// ---------------------------------------------------------------------------
+
+export type FundingStatus =
+  | 'approved'
+  | 'drafted'
+  | 'ready to apply'
+  | 'applied'
+  | 'awarded'
+  | 'declined'
+  | 'withdrawn';
+
+export type FundingType =
+  | 'Grant'
+  | 'Fellowship'
+  | 'Residency'
+  | 'Accelerator'
+  | 'Competition'
+  | 'Sponsored Program';
+
+export type FundingVenture =
+  | 'Artisanship'
+  | 'The Trades Show'
+  | 'The Corral'
+  | 'Artisan Mag'
+  | 'Artisanship Community'
+  | 'Detto'
+  | 'Neo-Renaissance Ecosystem'
+  | 'Cross-venture';
+
+export type FundingEffort = 'low (<2hr)' | 'medium (2-8hr)' | 'high (>8hr)';
+
+export interface CreateFundingOpportunityParams {
+  opportunityName: string;
+  funder?: string;
+  fundingType?: FundingType;
+  fundingAmount?: number;
+  applicationDeadline?: string; // YYYY-MM-DD
+  status?: FundingStatus;
+  ventures?: FundingVenture[];
+  effortEstimate?: FundingEffort;
+  matchRating?: number;
+  reasonForMatch?: string;
+  eligibilityCriteria?: string;
+  sourceUrl?: string;
+  notes?: string;
+}
+
+function buildFundingProperties(
+  params: Partial<CreateFundingOpportunityParams>,
+): Record<string, unknown> {
+  const p: Record<string, unknown> = {};
+  if (params.opportunityName !== undefined) {
+    p['Opportunity Name'] = {
+      title: [{ type: 'text', text: { content: params.opportunityName } }],
+    };
+  }
+  if (params.funder !== undefined) {
+    const rt = richText(params.funder);
+    if (rt) p['Funder'] = rt;
+  }
+  if (params.fundingType) p['Funding Type'] = { select: { name: params.fundingType } };
+  if (params.fundingAmount !== undefined) p['Funding Amount'] = { number: params.fundingAmount };
+  if (params.applicationDeadline) {
+    p['Application Deadline'] = { date: { start: params.applicationDeadline } };
+  }
+  if (params.status) p['Status'] = { select: { name: params.status } };
+  if (params.ventures?.length) {
+    p['Venture'] = { multi_select: params.ventures.map((name) => ({ name })) };
+  }
+  if (params.effortEstimate) p['Effort Estimate'] = { select: { name: params.effortEstimate } };
+  if (params.matchRating !== undefined) p['Match Rating'] = { number: params.matchRating };
+  if (params.reasonForMatch !== undefined) {
+    const rt = richText(params.reasonForMatch);
+    if (rt) p['Reason for rating/match'] = rt;
+  }
+  if (params.eligibilityCriteria !== undefined) {
+    const rt = richText(params.eligibilityCriteria);
+    if (rt) p['Eligibility Criteria'] = rt;
+  }
+  if (params.sourceUrl) p['Source URL'] = { url: params.sourceUrl };
+  if (params.notes !== undefined) {
+    const rt = richText(params.notes);
+    if (rt) p['Notes'] = rt;
+  }
+  return p;
+}
+
+export async function createFundingOpportunity(
+  params: CreateFundingOpportunityParams,
+): Promise<string> {
+  const dbId = env.notion.fundingDbId;
+  if (!dbId) throw new Error('NOTION_FUNDING_DB_ID not set');
+  const dsId = await resolveDataSourceId(dbId);
+  const properties = buildFundingProperties(params);
+  const res: any = await notion.pages.create({
+    parent: { type: 'data_source_id', data_source_id: dsId } as any,
+    properties: properties as any,
+  });
+  return res.id as string;
+}
+
+export async function updateFundingOpportunity(
+  pageId: string,
+  params: Partial<CreateFundingOpportunityParams>,
+): Promise<void> {
+  const properties = buildFundingProperties(params);
+  await notion.pages.update({ page_id: pageId, properties: properties as any });
+}
+
+export interface FundingOpportunityRow {
+  id: string;
+  name: string;
+  funder: string | null;
+  fundingType: string | null;
+  fundingAmount: number | null;
+  deadline: string | null;
+  status: string | null;
+  ventures: string[];
+  effortEstimate: string | null;
+  matchRating: number | null;
+  sourceUrl: string | null;
+}
+
+function mapFundingRow(page: any): FundingOpportunityRow {
+  const props = page.properties ?? {};
+  return {
+    id: page.id,
+    name: getTitle(page),
+    funder: getRichText(page, 'Funder') || null,
+    fundingType: getSelect(page, 'Funding Type'),
+    fundingAmount: props['Funding Amount']?.number ?? null,
+    deadline: getDate(page, 'Application Deadline'),
+    status: getSelect(page, 'Status'),
+    ventures: getMultiSelect(page, 'Venture'),
+    effortEstimate: getSelect(page, 'Effort Estimate'),
+    matchRating: props['Match Rating']?.number ?? null,
+    sourceUrl: props['Source URL']?.url ?? null,
+  };
+}
+
+// Deadline alert query — opportunities not yet submitted/abandoned whose
+// deadline falls within the window. Used by Ops Chief daily briefing.
+export async function getUpcomingFundingDeadlines(
+  windowDays = 14,
+  todayIso?: string,
+): Promise<FundingOpportunityRow[]> {
+  const dbId = env.notion.fundingDbId;
+  if (!dbId) return [];
+  const today = todayIso ?? todayIsoPT();
+  const horizon = addDaysIso(today, windowDays);
+  const res: any = await queryDs(dbId, {
+    filter: {
+      and: [
+        { property: 'Application Deadline', date: { on_or_after: today } },
+        { property: 'Application Deadline', date: { on_or_before: horizon } },
+        { property: 'Status', select: { does_not_equal: 'applied' } },
+        { property: 'Status', select: { does_not_equal: 'awarded' } },
+        { property: 'Status', select: { does_not_equal: 'declined' } },
+        { property: 'Status', select: { does_not_equal: 'withdrawn' } },
+      ],
+    },
+    sorts: [{ property: 'Application Deadline', direction: 'ascending' }],
+    page_size: 50,
+  });
+  return (res.results ?? []).map(mapFundingRow);
+}
+
+// Active list — used as "don't re-surface" context for the scan prompt.
+export async function getActiveFundingOpportunities(): Promise<FundingOpportunityRow[]> {
+  const dbId = env.notion.fundingDbId;
+  if (!dbId) return [];
+  const res: any = await queryDs(dbId, {
+    filter: {
+      and: [
+        { property: 'Status', select: { does_not_equal: 'declined' } },
+        { property: 'Status', select: { does_not_equal: 'withdrawn' } },
+      ],
+    },
+    page_size: 100,
+  });
+  return (res.results ?? []).map(mapFundingRow);
 }

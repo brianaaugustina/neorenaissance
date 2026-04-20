@@ -5,6 +5,7 @@ import {
   logOutput,
   updateOutputStatus,
 } from '@/lib/agent-outputs';
+import { markOpportunityReadyToApply } from '@/lib/agents/funding-scout';
 import { onPressPitchApproval } from '@/lib/agents/pr-director';
 import { executeShowrunnerDraft } from '@/lib/agents/showrunner';
 import { onPitchApproval } from '@/lib/agents/sponsorship-director';
@@ -195,6 +196,24 @@ export async function POST(
         });
       } catch (notionErr) {
         console.error('PR onPressPitchApproval failed:', notionErr);
+      }
+
+      // Funding Scout — Gate 2: when a funding-scout draft is approved, flip
+      // the Notion funding DB row to "ready to apply" and create a Notion
+      // reminder task keyed to the application deadline. No-op on reject.
+      if (
+        status === 'approved' &&
+        item.agent_name === 'funding-scout' &&
+        item.type === 'draft' &&
+        item.agent_output_id
+      ) {
+        try {
+          await markOpportunityReadyToApply({
+            draftOutputId: item.agent_output_id,
+          });
+        } catch (fundErr) {
+          console.error('Funding Scout markOpportunityReadyToApply failed:', fundErr);
+        }
       }
     }
 

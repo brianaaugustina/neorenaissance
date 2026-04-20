@@ -40,14 +40,15 @@ export function RunPrResearchButton() {
       <button
         onClick={run}
         disabled={isPending}
-        className="px-4 py-2 text-sm rounded-lg border transition disabled:opacity-40"
+        className="px-4 py-2 text-sm border transition disabled:opacity-40"
         style={{
-          borderColor: 'var(--gold)',
-          color: 'var(--gold)',
-          background: isPending ? 'var(--surface-2)' : 'transparent',
+          borderRadius: 0,
+          borderColor: 'var(--ink)',
+          color: 'var(--ink)',
+          background: isPending ? 'var(--bg-2)' : 'transparent',
         }}
       >
-        {isPending ? 'Scanning…' : 'Run Research'}
+        {isPending ? 'Running…' : 'Run agent'}
       </button>
       {lastResult && (
         <p className="text-xs muted">
