@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Agent.os',
+    title: 'B.os',
   },
   formatDetection: { telephone: false },
 };

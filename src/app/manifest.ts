@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Agent.os',
-    short_name: 'Agent.os',
+    name: 'B.os',
+    short_name: 'B.os',
     description: "Briana's agentic operating interface",
     start_url: '/',
     display: 'standalone',
