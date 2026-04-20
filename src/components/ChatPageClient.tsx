@@ -218,6 +218,7 @@ export function ChatPageClient({
       </div>
 
       <div
+        data-chat-grid
         style={{
           display: 'grid',
           gridTemplateColumns: '300px 1fr 300px',
@@ -228,6 +229,7 @@ export function ChatPageClient({
       >
         {/* Sidebar */}
         <aside
+          data-chat-sidebar
           style={{
             borderRight: '1px solid var(--rule-strong)',
             display: 'flex',
@@ -362,7 +364,10 @@ export function ChatPageClient({
         </aside>
 
         {/* Conversation */}
-        <section style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <section
+          data-chat-conv
+          style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
+        >
           <div
             style={{
               padding: '18px 28px',
@@ -531,6 +536,7 @@ export function ChatPageClient({
 
         {/* Context rail */}
         <aside
+          data-chat-context
           style={{
             borderLeft: '1px solid var(--rule-strong)',
             padding: '20px 24px',

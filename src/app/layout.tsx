@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google';
+import { MobileTabBarMount } from '@/components/MobileTabBarMount';
 import './globals.css';
 
 const serif = Fraunces({
@@ -49,7 +50,10 @@ export default function RootLayout({
       lang="en"
       className={`${serif.variable} ${sans.variable} ${mono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <MobileTabBarMount />
+      </body>
     </html>
   );
 }

@@ -366,3 +366,161 @@ nav.topnav .meta .dot {
 }
 .briefing-body > :first-child { margin-top: 0; }
 .briefing-body > :last-child { margin-bottom: 0; }
+
+/* ============================================================
+ * Mobile tab bar — bottom fixed, 3 tabs (Dashboard · Queue · Chat)
+ * Styled to match the Mobile.html design: ink indicator above active,
+ * JetBrains Mono labels, ink badge for counts. Hidden on desktop via
+ * the responsive block below.
+ * ============================================================ */
+.mobile-tabbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 80;
+  height: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 20px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rule-strong);
+  background: var(--bg);
+  display: none; /* hidden on desktop; unhidden in @media (max-width: 768px) */
+  grid-template-columns: repeat(3, 1fr);
+}
+.mobile-tabbar .tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+  text-decoration: none;
+  position: relative;
+}
+.mobile-tabbar .tab.on { color: var(--ink); font-weight: 700; }
+.mobile-tabbar .tab.on::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 2px;
+  background: var(--ink);
+}
+.mobile-tabbar .tab .ico {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mobile-tabbar .tab .badge {
+  position: absolute;
+  top: 2px;
+  right: calc(50% - 22px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+}
+
+/* ============================================================
+ * Responsive — mobile adaptations (≤ 768px)
+ * ============================================================ */
+@media (max-width: 768px) {
+  /* Hide desktop top nav; show bottom tab bar */
+  nav.topnav { display: none; }
+  .mobile-tabbar { display: grid; }
+
+  /* Reserve vertical space so page content isn't hidden behind the tab bar */
+  body { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Hero shrink — 72px titles crush a phone screen */
+  .title { font-size: 40px !important; letter-spacing: -0.035em; line-height: 0.95; }
+  .title .count { font-size: 14px; }
+
+  /* Common page-main padding reductions.
+   * Every <main> in the app uses inline padding ~32px 40px 80px. The stacking
+   * selectors below target the outer main element at narrow widths. */
+  main { padding: 20px 16px 40px !important; }
+
+  /* Hero two-column (title + stat rail) → single column */
+  main > div:first-child > div[style*="grid-template-columns: 1fr auto"],
+  main > div[style*="grid-template-columns: 1fr auto"] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Filter row: allow horizontal scroll instead of wrapping off-screen */
+  main > div[style*="border-bottom: 1px solid var(--rule-strong)"] {
+    overflow-x: auto;
+    padding-right: 0 !important;
+  }
+  main > div[style*="border-bottom: 1px solid var(--rule-strong)"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Schedule week grid collapses from 7 cols → stack */
+  main > div[style*="grid-template-columns: repeat(7"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Agents card grid collapses to 1 col */
+  main section > div[style*="grid-template-columns: repeat(auto-fill"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .title { font-size: 32px !important; }
+  main { padding: 16px 14px 40px !important; }
+}
+
+/* ============================================================
+ * Dashboard 3-column → stacked on mobile
+ * Dashboard uses inline grid with custom column widths; a data attribute
+ * on the outer wrapper lets the responsive rule target it precisely.
+ * ============================================================ */
+@media (max-width: 768px) {
+  [data-dashboard-grid] {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+  }
+  [data-dashboard-grid] > * {
+    border-right: none !important;
+    border-bottom: 1px solid var(--rule-strong) !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  [data-dashboard-grid] > *:last-child { border-bottom: none !important; }
+}
+
+/* ============================================================
+ * Chat page 3-column → single-pane on mobile
+ * Sidebar collapses to a horizontal thread-chip row, context rail hides.
+ * ============================================================ */
+@media (max-width: 768px) {
+  [data-chat-grid] {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+  }
+  [data-chat-grid] > [data-chat-sidebar] {
+    border-right: none !important;
+    border-bottom: 1px solid var(--rule) !important;
+    max-height: none;
+  }
+  [data-chat-grid] > [data-chat-context] { display: none; }
+  [data-chat-grid] > [data-chat-conv] {
+    border-right: none !important;
+    min-height: 60vh;
+  }
+}

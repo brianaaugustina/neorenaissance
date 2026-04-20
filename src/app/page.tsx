@@ -128,6 +128,7 @@ export default async function Home() {
             column can scroll internally (with the sticky "View full queue"
             CTA pinned at its bottom) without the whole page scrolling. */}
         <div
+          data-dashboard-grid
           style={{
             display: 'grid',
             gridTemplateColumns: '300px 1fr 360px',

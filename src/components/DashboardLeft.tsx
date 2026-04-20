@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { formatPtLongDate } from '@/lib/time';
 
 interface TaskLike {
@@ -308,11 +309,19 @@ function TodoCard({
   initiativesById: Map<string, string>;
   todayIso: string;
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  // Optimistic local state — flips immediately on click so the strike-through
+  // shows without waiting on the Notion round trip. Seeded from the task's
+  // stored status so a re-render after router.refresh() preserves the mark.
+  const [localDone, setLocalDone] = useState(task.status === 'Done');
+  const [error, setError] = useState<string | null>(null);
+
   const initiative =
     task.initiativeIds && task.initiativeIds[0]
       ? initiativesById.get(task.initiativeIds[0]) ?? null
       : null;
-  const done = task.status === 'Done';
+  const done = localDone;
   const overdue = !!task.toDoDate && task.toDoDate < todayIso && !done;
   const due = task.toDoDate
     ? task.toDoDate === todayIso
@@ -321,6 +330,27 @@ function TodoCard({
         ? 'OVERDUE'
         : task.toDoDate.slice(5)
     : null;
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isPending || done) return;
+    setError(null);
+    setLocalDone(true);
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/done`, { method: 'POST' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Failed');
+        }
+        // Pull fresh data from Notion so the open/overdue counts update too.
+        router.refresh();
+      } catch (e) {
+        setLocalDone(false);
+        setError(e instanceof Error ? e.message : 'Failed');
+      }
+    });
+  };
 
   return (
     <div
@@ -332,17 +362,24 @@ function TodoCard({
         gridTemplateColumns: '14px 1fr',
         gap: 10,
         alignItems: 'start',
-        cursor: 'pointer',
+        opacity: done ? 0.55 : 1,
+        transition: 'opacity 160ms ease',
       }}
     >
-      <span
+      <button
+        onClick={toggle}
+        disabled={isPending || done}
+        aria-label={done ? 'Task done' : 'Mark task done'}
+        aria-pressed={done}
         style={{
           width: 12,
           height: 12,
           border: '1px solid var(--ink)',
-          display: 'inline-block',
           background: done ? 'var(--ink)' : 'transparent',
           marginTop: 3,
+          padding: 0,
+          cursor: isPending || done ? 'default' : 'pointer',
+          borderRadius: 0,
         }}
       />
       <div style={{ minWidth: 0 }}>
@@ -387,6 +424,19 @@ function TodoCard({
             </>
           )}
         </div>
+        {error && (
+          <div
+            className="mono"
+            style={{
+              fontSize: 10,
+              color: 'var(--danger)',
+              marginTop: 4,
+              letterSpacing: '0.04em',
+            }}
+          >
+            {error}
+          </div>
+        )}
       </div>
     </div>
   );
