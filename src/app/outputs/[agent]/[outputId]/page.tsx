@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AgentDashNav } from '@/components/AgentDashNav';
-import { LandscapeBody } from '@/components/LandscapeBody';
 import { OutputDetailActions } from '@/components/OutputDetailActions';
+import { OutputDetailBody } from '@/components/output-detail/OutputDetailBody';
 import { supabaseAdmin } from '@/lib/supabase/client';
 import { formatPtDateTime, formatPtTime } from '@/lib/time';
 
@@ -141,9 +141,10 @@ export default async function OutputDetailPage({
 
   const title = describeOutput(output.output_type, content);
   const statusMeta = buildStatusMeta(output, queueItem);
+  // hasRichUi flags multi-item outputs where the Gateway panel should use the
+  // "per-sub-item actions below" copy instead of the plain Approve/Reject copy.
   const hasRichUi =
     RICH_UI_AGENTS.has(output.agent_id) || RICH_UI_OUTPUT_TYPES.has(output.output_type);
-  const isActionable = queueItem?.status === 'pending' || queueItem?.status === 'approved';
 
   return (
     <>
@@ -316,10 +317,14 @@ export default async function OutputDetailPage({
               </div>
             )}
 
-            {/* Body */}
-            <Block title="Body">
-              <OutputContent outputType={output.output_type} content={content} />
-            </Block>
+            {/* Assessment + children (per-agent per-type blocks) */}
+            <OutputDetailBody
+              agentId={output.agent_id}
+              outputType={output.output_type}
+              content={content}
+              queueItemId={queueItem?.id ?? null}
+              queueStatus={queueItem?.status ?? null}
+            />
 
             {/* Tags */}
             {output.tags && output.tags.length > 0 && (
@@ -344,9 +349,9 @@ export default async function OutputDetailPage({
               </Block>
             )}
 
-            {/* Children */}
+            {/* Child outputs (separate agent_outputs rows) */}
             {children.length > 0 && (
-              <Block title={`Child outputs · ${children.length}`}>
+              <Block title={`Child output rows · ${children.length}`}>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {children.map((c) => (
                     <li
@@ -390,11 +395,28 @@ export default async function OutputDetailPage({
               </Block>
             )}
 
-            {/* Raw JSON */}
-            <Block title="Raw output">
+            {/* Raw JSON — collapsed by default; devtools-style escape hatch
+                for shapes the dispatcher doesn't recognise yet. */}
+            <details style={{ marginBottom: 36 }}>
+              <summary
+                className="mono"
+                style={{
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: 'var(--ink-3)',
+                  paddingBottom: 8,
+                  borderBottom: '1px solid var(--rule)',
+                  fontWeight: 500,
+                }}
+              >
+                Raw draft_content
+              </summary>
               <pre
                 className="mono"
                 style={{
+                  marginTop: 14,
                   fontSize: 11,
                   color: 'var(--ink)',
                   lineHeight: 1.7,
@@ -408,7 +430,7 @@ export default async function OutputDetailPage({
               >
                 {JSON.stringify(content, null, 2)}
               </pre>
-            </Block>
+            </details>
           </div>
 
           {/* Right rail */}
@@ -496,31 +518,6 @@ export default async function OutputDetailPage({
           </aside>
         </div>
 
-        {/* Footnote */}
-        {isActionable && hasRichUi && (
-          <p
-            className="mono"
-            style={{
-              marginTop: 40,
-              padding: '12px 16px',
-              border: '1px solid var(--rule)',
-              background: 'var(--bg-2)',
-              fontSize: 11,
-              color: 'var(--ink-2)',
-              letterSpacing: '0.04em',
-              lineHeight: 1.6,
-            }}
-          >
-            This {output.output_type.replace(/_/g, ' ')} has per-sub-item actions
-            (approve individual opportunities, route recommendations, promote
-            preferences, act on findings). The{' '}
-            <Link href={`/queue/${queueItem?.id}/review`} style={{ color: 'var(--ink)' }}>
-              queue review surface
-            </Link>{' '}
-            renders the rich per-child UI; this page is the read view + chain
-            context.
-          </p>
-        )}
       </main>
     </>
   );
@@ -700,10 +697,10 @@ function Gateway({
       >
         {pending
           ? hasRichUi
-            ? 'This is a multi-sub-item briefing. Approve / Reject / Dismiss / Update acts on the whole package; per-child decisions (per-opportunity, per-recommendation, per-finding) live on the queue review surface.'
+            ? 'Per-child decisions (per-opportunity, per-recommendation, per-finding) are below. Package-level Approve / Reject / Dismiss / Update act on the whole briefing.'
             : 'Approve to release downstream. Reject or Dismiss to remove from the queue. Update to re-run with feedback.'
           : approved
-            ? 'Already approved. Downstream actions (execute plan, schedule clips, apply diffs) happen on the queue or agent page.'
+            ? 'Already approved. Per-child actions below still work; downstream execution (plan, schedules, diffs) runs from here or the agent page.'
             : 'This item is in a non-actionable state.'}
       </p>
       <OutputDetailActions queueItemId={queueItemId} queueStatus={queueStatus} />
@@ -822,132 +819,3 @@ function formatDuration(ms: number | null | undefined): string {
     .padStart(2, '0')}s`;
 }
 
-function OutputContent({
-  outputType,
-  content,
-}: {
-  outputType: string;
-  content: Record<string, unknown>;
-}) {
-  if (outputType === 'daily_briefing' || outputType === 'editorial_landscape_briefing') {
-    const html =
-      typeof content.briefing_html === 'string'
-        ? (content.briefing_html as string)
-        : typeof content.html === 'string'
-          ? (content.html as string)
-          : undefined;
-    const markdown =
-      typeof content.briefing_markdown === 'string'
-        ? (content.briefing_markdown as string)
-        : typeof content.markdown === 'string'
-          ? (content.markdown as string)
-          : undefined;
-    if (html || markdown) {
-      return <LandscapeBody html={html} markdown={markdown} />;
-    }
-  }
-
-  const entries = Object.entries(content).filter(([k]) => {
-    return ![
-      'raw_output',
-      'inputs',
-      'superseded_by_queue_id',
-      'notion_entries_created',
-      'notion_entry_ids',
-      'superseded_feedback',
-    ].includes(k);
-  });
-  if (entries.length === 0) {
-    return (
-      <p
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: 'var(--ink-3)',
-          letterSpacing: '0.04em',
-        }}
-      >
-        (no content body)
-      </p>
-    );
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {entries.map(([key, value]) => (
-        <div key={key}>
-          <div
-            className="mono"
-            style={{
-              fontSize: 10,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-2)',
-              marginBottom: 4,
-              fontWeight: 500,
-            }}
-          >
-            {key.replace(/_/g, ' ')}
-          </div>
-          <FieldValue value={value} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FieldValue({ value }: { value: unknown }) {
-  if (value == null || value === '') {
-    return (
-      <p
-        className="mono"
-        style={{ fontSize: 11, color: 'var(--ink-3)' }}
-      >
-        (empty)
-      </p>
-    );
-  }
-  if (typeof value === 'string') {
-    return (
-      <pre
-        style={{
-          whiteSpace: 'pre-wrap',
-          fontSize: 14,
-          lineHeight: 1.55,
-          margin: 0,
-          color: 'var(--ink)',
-          fontFamily: 'inherit',
-        }}
-      >
-        {value}
-      </pre>
-    );
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return (
-      <p
-        className="mono"
-        style={{ fontSize: 13, margin: 0 }}
-      >
-        {String(value)}
-      </p>
-    );
-  }
-  return (
-    <pre
-      className="mono"
-      style={{
-        fontSize: 11,
-        color: 'var(--ink-2)',
-        whiteSpace: 'pre-wrap',
-        margin: 0,
-        lineHeight: 1.6,
-        maxHeight: 360,
-        overflow: 'auto',
-        background: 'var(--bg-2)',
-        padding: 12,
-      }}
-    >
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}

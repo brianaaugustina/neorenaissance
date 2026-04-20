@@ -3239,7 +3239,7 @@ function updatePlaceholder(agent: string, type: string): string {
 // Showrunner captions tab — with per-clip Schedule button (Pass B)
 // ============================================================================
 
-interface ShowrunnerClipCaptionCard {
+export interface ShowrunnerClipCaptionCard {
   index?: number;
   caption?: string;
   hashtags?: string[];
@@ -3254,7 +3254,7 @@ interface ShowrunnerClipCaptionCard {
   notion_content_id?: string;
 }
 
-function ShowrunnerCaptionsList({
+export function ShowrunnerCaptionsList({
   clipCaptions,
   legacySocialCaptions,
   approved,
