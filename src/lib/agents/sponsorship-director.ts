@@ -200,6 +200,29 @@ You are running the weekly Sponsorship Director research scan for The Trades Sho
 Follow the 5-point fit test in the playbook strictly. Candidates scoring below 3/5
 MUST NOT appear in the surfaced list.
 
+# CRITICAL: verify every brand + contact via web search before surfacing
+
+You have the web_search tool available. Use it. Your training data is stale;
+fabricated brands, stale contacts, or invented emails burn Briana's time and
+trust with real sponsors.
+
+For each candidate you consider:
+
+1. Web search the brand + "San Francisco" or their category to confirm the
+   company still exists, is still operating in the niche, and hasn't been
+   acquired / pivoted in a way that breaks the fit test.
+2. Find a named contact via web search — LinkedIn, the company's team page,
+   a recent press quote. NEVER compose an email from a pattern guess. If you
+   cannot verify a named contact via search, set contact fields to null and
+   contact_flag to "no-named-contact" or "unverified-contact".
+3. If you include contact_email, it MUST have appeared in web_search results
+   (company contact page, press release, staff directory). Do not pattern-
+   match firstname@brand.com.
+4. source_note should name the URL or source you verified against.
+
+If you cannot verify a brand's current state or find a contact path via web
+search, prefer surfacing fewer rather than padding with unverified guesses.
+
 # Output format (strict JSON, no commentary)
 
 Return a single JSON object wrapped exactly in these markers:
@@ -301,10 +324,15 @@ Produce the weekly research batch per the instructions above. Aim for 15–30 sc
 Only brands that pass the 5-point fit test (>=3) should be surfaced. Return the JSON wrapped
 between BEGIN_RESEARCH / END_RESEARCH markers.`;
 
+    // Web search budget: ~1-2 searches per candidate (brand existence + contact
+    // verification) with a 10-call floor and 60-call ceiling. Matches the
+    // talent-scout pattern so press-style hallucinated contacts stop happening.
+    const webSearchBudget = 30;
     const result = await think({
       systemPrompt: system,
       userPrompt: user,
       maxTokens: 6000,
+      webSearch: { maxUses: webSearchBudget },
     });
 
     const rawJson =
@@ -403,7 +431,7 @@ between BEGIN_RESEARCH / END_RESEARCH markers.`;
       status: 'success',
       tokensUsed: result.inputTokens + result.outputTokens,
       model: MODEL,
-      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length}`,
+      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length} web_searches=${result.webSearchCount ?? 0}`,
       outputSummary: summary,
       approvalQueueId: queueId,
       costEstimate: Number(result.costEstimate.toFixed(4)),
@@ -763,6 +791,15 @@ The lead being replaced plus Briana's feedback (if any) is below. Return
 exactly ONE new candidate that scores 3+ on the 5-point fit test in the
 playbook. Avoid every brand listed in "do not re-surface" in the prompt.
 
+# CRITICAL: verify the replacement via web search
+
+Use web_search. Do not fabricate brands or contacts. Confirm the brand
+exists, is still in-market, and matches the fit test before returning.
+If you include contact_email or contact_name, they MUST come from a URL
+your web_search returned (company page, LinkedIn, press). If you cannot
+verify a contact, set those fields to null and flag accordingly — never
+pattern-guess an email.
+
 # Output format (strict JSON, no commentary)
 
 Wrap the single candidate exactly between these markers:
@@ -892,6 +929,7 @@ Return the replacement JSON wrapped between BEGIN_REPLACEMENT / END_REPLACEMENT 
     systemPrompt: system,
     userPrompt: user,
     maxTokens: 1500,
+    webSearch: { maxUses: 8 },
   });
 
   const rawJson =

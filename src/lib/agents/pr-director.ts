@@ -235,6 +235,28 @@ This briefing is read for context by the next four weekly research runs. It
 does NOT generate pitches. It does NOT surface leads. Its job is to give
 future research runs a current view of where pitches will land best.
 
+# CRITICAL: use web search for current state
+
+You have the web_search tool available. Use it. Editorial calendars,
+observance dates, and trending narratives all drift — your training data
+cannot tell you what an outlet is publishing next month or what piece of
+culture is breaking this week.
+
+Search for each of the four sections:
+- Editorial calendars: search each tracked outlet's media kit / editorial
+  calendar / upcoming-issues page. If a submission deadline is referenced,
+  only cite dates you saw in search results.
+- Cultural moments: confirm dates via search (observance date lists,
+  industry calendars). Don't guess.
+- Trending narratives: search within the last 30 days for pieces in
+  craft / SF / AI / slow-living / food-heritage to identify current threads.
+- Milestone alignments: pair verified cultural dates with Season 2
+  episodes from the playbook context.
+
+Never cite an outlet's calendar or a cultural date you couldn't verify
+via search. If you can't find current info for a section, say so briefly
+inside that section rather than inventing content.
+
 # Output format (strict — HTML, no markdown)
 
 Return clean semantic HTML. Use real tags — NEVER markdown syntax (no #, ##,
@@ -326,6 +348,7 @@ and concrete milestone alignments with current Season 2 episodes.`;
       systemPrompt: system,
       userPrompt: user,
       maxTokens: 3500,
+      webSearch: { maxUses: 20 },
     });
 
     const today = todayIsoPT();
@@ -365,7 +388,7 @@ and concrete milestone alignments with current Season 2 episodes.`;
       status: 'success',
       tokensUsed: result.inputTokens + result.outputTokens,
       model: MODEL,
-      contextSummary: `landscape ${monthLabel}`,
+      contextSummary: `landscape ${monthLabel} web_searches=${result.webSearchCount ?? 0}`,
       outputSummary: `Landscape briefing for ${monthLabel}`,
       costEstimate: Number(result.costEstimate.toFixed(4)),
     });
@@ -464,6 +487,34 @@ You are running the weekly PR Director press research scan.
 
 Evaluate each candidate against the personalization minimums in playbook §4.
 Candidates scoring below 3/5 MUST NOT appear in the surfaced list.
+
+# CRITICAL: verify every journalist via web search before surfacing
+
+You have the web_search tool available. Use it. Journalists change outlets,
+beats, and bylines constantly — composing URLs or emails from training data
+produces 404s and stale contacts, which burns Briana's outreach credibility.
+
+For each candidate you consider:
+
+1. Web search the journalist's name + current outlet. Confirm they are still
+   at that outlet and still covering the beat you're pairing them with.
+2. Find a RECENT piece they wrote (within 90 days). Their byline page, a
+   direct article URL, or a staff directory listing. NEVER compose a URL
+   from training-data guesses.
+3. The source_link field MUST be a URL that appeared in your web_search
+   results and points to a real, live page tied to this journalist (their
+   byline, a specific recent article, or their staff profile). If you
+   cannot verify a live URL via search, set source_link to null — do not
+   invent one.
+4. If you include contact_email, it MUST appear on a page returned by web
+   search (an outlet's contact page, a bio, an author page). Do not
+   pattern-guess firstname.lastname@outlet.com. When the contact can't be
+   verified, set contact_email to null and contact_flag to
+   "unverified-contact" or "no-named-contact".
+
+If you cannot verify a journalist's current role + a recent piece + a live
+URL via search, prefer surfacing fewer rather than padding. The whole
+output is worthless to Briana if the links 404.
 
 # Output format (strict JSON, no commentary)
 
@@ -575,10 +626,15 @@ Produce the weekly press research batch per the instructions above. Aim for
 should be surfaced. Return the JSON wrapped between BEGIN_RESEARCH /
 END_RESEARCH markers.`;
 
+    // Web search budget: ~2 searches per candidate (role verification + recent
+    // piece URL). Matches talent-scout / funding-scout pattern. Hard cap at
+    // 60 to keep per-run cost predictable (~$0.60 max at Anthropic's $10/1K).
+    const webSearchBudget = 30;
     const result = await think({
       systemPrompt: system,
       userPrompt: user,
       maxTokens: 12000,
+      webSearch: { maxUses: webSearchBudget },
     });
 
     const rawJson =
@@ -721,7 +777,7 @@ END_RESEARCH markers.`;
       status: 'success',
       tokensUsed: result.inputTokens + result.outputTokens,
       model: MODEL,
-      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length} landscape=${landscape ? 'loaded' : 'missing'}`,
+      contextSummary: `pipeline=${pipeline.length} reviewed=${reviewed.length} surfaced=${surfaced.length} landscape=${landscape ? 'loaded' : 'missing'} web_searches=${result.webSearchCount ?? 0}`,
       outputSummary: summary,
       approvalQueueId: queueId,
       costEstimate: Number(result.costEstimate.toFixed(4)),
@@ -1100,6 +1156,16 @@ The lead being replaced plus Briana's feedback (if any) is below. Return
 exactly ONE new candidate that scores 3+ on the fit test. Avoid every
 outlet/journalist listed in "do not re-surface" in the prompt.
 
+# CRITICAL: verify the replacement via web search
+
+Use web_search. Do not fabricate journalists, URLs, or contacts. Confirm
+the journalist is currently at the outlet you name, still covers the
+relevant beat, and has a live byline or recent piece. source_link MUST
+be a URL from your search results that points to a real live page tied
+to this journalist — never composed from training data. If you include
+contact_email, it must have appeared on a page your search returned,
+otherwise set it to null and flag it.
+
 # Output format (strict JSON)
 
 <!-- BEGIN_REPLACEMENT -->
@@ -1242,6 +1308,7 @@ END_REPLACEMENT markers.`;
     systemPrompt: system,
     userPrompt: user,
     maxTokens: 1800,
+    webSearch: { maxUses: 8 },
   });
 
   const rawJson =

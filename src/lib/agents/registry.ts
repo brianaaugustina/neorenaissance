@@ -163,6 +163,7 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
       reads_from: [
         { target: 'Notion Companies + Outreach DBs', note: 'existing pipeline' },
         { target: 'context/agents/sponsorship-director/*', note: 'voice + playbook + fit test' },
+        { target: 'Web (web_search)', note: 'verifies brand + contact before surfacing' },
       ],
       writes_to: [
         { target: 'approval_queue', note: 'research batch + per-lead drafts' },
@@ -211,6 +212,7 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
       reads_from: [
         { target: 'Notion Contacts + Outreach DBs', note: 'existing press pipeline' },
         { target: 'context/agents/pr-director/*', note: 'voice modes + playbook' },
+        { target: 'Web (web_search)', note: 'verifies journalist + live URL before surfacing' },
       ],
       writes_to: [
         { target: 'approval_queue', note: 'landscape + research + pitches' },
